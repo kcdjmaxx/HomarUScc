@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Zero-token event loop for HomarUScc
+# Long-polls the dashboard HTTP API — blocks at OS level, zero Claude tokens while idle.
+# Returns to Claude only when real events arrive.
+
+set -euo pipefail
+
+# Read dashboard port from config, default 3120
+CONFIG="$HOME/.homaruscc/config.json"
+if [[ -f "$CONFIG" ]] && command -v jq &>/dev/null; then
+  PORT=$(jq -r '.dashboard.port // 3120' "$CONFIG" 2>/dev/null || echo 3120)
+else
+  PORT=3120
+fi
+
+BASE="http://127.0.0.1:${PORT}"
+TIMEOUT=120
+
+# Prevent duplicate listeners
+PIDFILE="/tmp/homaruscc-event-loop.pid"
+if [[ -f "$PIDFILE" ]]; then
+  OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
+  if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "Killing previous event-loop (PID $OLD_PID)"
+    kill "$OLD_PID" 2>/dev/null || true
+    sleep 0.5
+  fi
+fi
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
+
+while true; do
+  HTTP_CODE=$(curl -s -o /tmp/homaruscc-wait-response.json -w "%{http_code}" \
+    "${BASE}/api/wait?timeout=${TIMEOUT}" 2>/dev/null) || {
+    echo "ERROR: curl failed — is the HomarUScc dashboard running on port ${PORT}?"
+    exit 1
+  }
+
+  case "$HTTP_CODE" in
+    204)
+      # Timeout, no events — loop again (zero tokens)
+      continue
+      ;;
+    200)
+      # Events arrived — print and return to Claude
+      cat /tmp/homaruscc-wait-response.json
+      echo ""
+      echo "---"
+      echo "Event loop paused. Handle the events above, then restart: bash homaruscc/bin/event-loop"
+      exit 0
+      ;;
+    *)
+      echo "ERROR: Unexpected HTTP ${HTTP_CODE} from /api/wait"
+      exit 1
+      ;;
+  esac
+done

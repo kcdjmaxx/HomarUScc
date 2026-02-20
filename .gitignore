@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+dashboard/node_modules/
+
+# Build output
+dist/
+dashboard/dist/
+
+# Environment & secrets
+.env
+*.env.*
+homaruscc.json
+
+# Database & memory
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Runtime data
+timers.json
+browser-data/
+
+# Claude Code local settings
+.claude/
+
+# User-specific runtime data (personal context, corrections, preferences)
+user/
+
+# System runtime data (learned corrections)
+system/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temp files
+/tmp/

@@ -1,0 +1,29 @@
+{
+  "channels": {
+    "telegram": {
+      "token": "${TELEGRAM_BOT_TOKEN}",
+      "allowedChatIds": []
+    }
+  },
+  "memory": {
+    "embedding": {
+      "provider": "ollama",
+      "model": "nomic-embed-text",
+      "baseUrl": "http://127.0.0.1:11434/v1"
+    }
+  },
+  "identity": {
+    "dir": "~/.homaruscc/identity"
+  },
+  "dashboard": {
+    "port": 3120,
+    "enabled": true
+  },
+  "timers": {
+    "enabled": true
+  },
+  "browser": {
+    "enabled": false,
+    "headless": true
+  }
+}
