@@ -32,6 +32,10 @@ user/
 # System runtime data (learned corrections)
 system/
 
+# Internal planning docs (not for GitHub)
+homarusPlan.md
+homarusRoadmap.md
+
 # Memory runtime data (stored by memory_store tool)
 competitor-intel/
 research/
