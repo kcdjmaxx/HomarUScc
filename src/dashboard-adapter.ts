@@ -1,3 +1,4 @@
+// CRC: crc-DashboardAdapter.md | Seq: seq-event-flow.md
 // Dashboard channel adapter — bridges web dashboard ↔ event loop
 import { v4 as uuid } from "uuid";
 import type { OutboundMessage, HealthStatus, Logger } from "./types.js";

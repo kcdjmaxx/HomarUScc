@@ -1,3 +1,4 @@
+// CRC: crc-BrowserService.md | Seq: seq-browser-action.md
 // Browser service — Playwright-based browser automation for HomarUScc
 // Follows TimerService lifecycle pattern: lazy launch, graceful shutdown
 import type { Browser, BrowserContext, Page } from "playwright";

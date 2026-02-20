@@ -1,3 +1,4 @@
+// CRC: crc-Skill.md | Seq: seq-startup.md
 // Skill — from HomarUS
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Event, SkillManifest, SkillState, ToolSchema, Logger } from "./types.js";

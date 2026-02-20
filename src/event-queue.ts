@@ -1,3 +1,4 @@
+// CRC: crc-EventQueue.md | Seq: seq-event-flow.md
 // Priority event queue — from HomarUS
 import type { Event, Logger } from "./types.js";
 

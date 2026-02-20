@@ -1,3 +1,4 @@
+// CRC: crc-MemoryIndex.md
 // Built-in tools: memory_search, memory_get, memory_store — from HomarUS
 import type { ToolDefinition, ToolResult } from "../types.js";
 import type { MemoryIndex } from "../memory-index.js";

@@ -1,3 +1,4 @@
+// CRC: crc-DashboardFrontend.md | Seq: seq-event-flow.md
 import { useState, useRef, useEffect, useMemo } from "react";
 
 interface WsMessage {

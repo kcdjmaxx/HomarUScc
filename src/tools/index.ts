@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md
 // Built-in tool registration — adapted from HomarUS
 import type { ToolRegistry } from "../tool-registry.js";
 import type { MemoryIndex } from "../memory-index.js";

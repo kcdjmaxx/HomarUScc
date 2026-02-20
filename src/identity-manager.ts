@@ -1,3 +1,4 @@
+// CRC: crc-IdentityManager.md | Seq: seq-startup.md
 // Identity manager — from HomarUS
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";

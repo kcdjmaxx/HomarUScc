@@ -1,3 +1,4 @@
+// CRC: crc-DashboardFrontend.md
 import { useEffect, useRef, useState, useCallback } from "react";
 
 interface WsMessage {

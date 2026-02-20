@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md | Seq: seq-event-flow.md
 // Tool registry with policies — from HomarUS
 import type { ToolDefinition, ToolResult, ToolContext, Logger } from "./types.js";
 

@@ -1,3 +1,4 @@
+// CRC: crc-ChannelAdapter.md | Seq: seq-event-flow.md
 // Channel adapter base — from HomarUS (removed CLIChannelAdapter, not needed for MCP)
 import { v4 as uuid } from "uuid";
 import type {

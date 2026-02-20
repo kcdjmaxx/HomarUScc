@@ -1,3 +1,4 @@
+// CRC: crc-McpServer.md | Seq: seq-event-flow.md, seq-memory-search.md, seq-browser-action.md
 // MCP tool definitions exposed to Claude Code
 import type { HomarUScc } from "./homaruscc.js";
 import type { TelegramChannelAdapter } from "./telegram-adapter.js";

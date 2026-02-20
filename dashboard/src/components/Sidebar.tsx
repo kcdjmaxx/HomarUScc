@@ -1,3 +1,4 @@
+// CRC: crc-DashboardFrontend.md
 type View = "chat" | "events" | "status" | "memory";
 
 interface Props {

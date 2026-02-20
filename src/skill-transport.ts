@@ -1,3 +1,4 @@
+// CRC: crc-SkillTransport.md | Seq: seq-startup.md
 // Skill transports — from HomarUS
 import type { Event, TransportType, Logger } from "./types.js";
 

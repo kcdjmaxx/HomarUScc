@@ -1,3 +1,4 @@
+// CRC: crc-DashboardServer.md | Seq: seq-event-flow.md
 // Dashboard server — Express + WebSocket for the web dashboard
 import { createServer, type Server as HttpServer } from "node:http";
 import { resolve, join } from "node:path";

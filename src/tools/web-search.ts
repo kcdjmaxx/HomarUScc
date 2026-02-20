@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md
 // Built-in tool: web_search — from HomarUS
 import type { ToolDefinition, ToolContext, ToolResult } from "../types.js";
 

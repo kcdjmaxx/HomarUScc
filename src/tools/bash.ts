@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md
 // Built-in tool: bash — from HomarUS
 import { exec } from "node:child_process";
 import type { ToolDefinition, ToolContext, ToolResult } from "../types.js";

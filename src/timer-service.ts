@@ -1,3 +1,4 @@
+// CRC: crc-TimerService.md | Seq: seq-timer-fire.md
 // Timer service — from HomarUS
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";

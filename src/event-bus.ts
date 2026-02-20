@@ -1,3 +1,4 @@
+// CRC: crc-EventBus.md | Seq: seq-event-flow.md
 // Event routing — from HomarUS
 import type { Event, DirectHandler, AgentHandlerConfig, Logger } from "./types.js";
 

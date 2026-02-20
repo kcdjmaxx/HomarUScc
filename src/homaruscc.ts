@@ -1,5 +1,5 @@
+// CRC: crc-HomarUScc.md | Seq: seq-startup.md, seq-event-flow.md, seq-shutdown.md
 // HomarUScc — Event loop orchestrator (fork of homarus.ts)
-// Stripped: no Agent, no ModelRouter, no HttpApi — Claude Code is the brain
 import { v4 as uuid } from "uuid";
 import type { Event, ConfigData, Logger, MessagePayload } from "./types.js";
 import { Config } from "./config.js";

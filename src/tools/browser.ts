@@ -1,3 +1,4 @@
+// CRC: crc-BrowserService.md | Seq: seq-browser-action.md
 // Built-in tools: browser_* — Playwright browser automation
 import type { ToolDefinition, ToolResult } from "../types.js";
 import type { BrowserService } from "../browser-service.js";

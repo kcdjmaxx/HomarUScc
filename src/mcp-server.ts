@@ -1,6 +1,6 @@
 #!/usr/bin/env node
+// CRC: crc-McpServer.md | Seq: seq-startup.md, seq-event-flow.md
 // HomarUScc MCP Server — stdio transport
-// Claude Code connects to this as an MCP server
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

@@ -1,3 +1,4 @@
+// CRC: crc-MemoryIndex.md | Seq: seq-memory-search.md
 // Memory index with hybrid vector+FTS search — from HomarUS
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, extname } from "node:path";

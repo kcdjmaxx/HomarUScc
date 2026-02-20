@@ -1,3 +1,4 @@
+// CRC: crc-ChannelManager.md | Seq: seq-startup.md, seq-event-flow.md
 // Channel manager — adapted from HomarUS (removed CLI adapter, added dashboard)
 import type { Event, OutboundMessage, ChannelConfig, HealthStatus, Logger } from "./types.js";
 import { ChannelAdapter } from "./channel-adapter.js";

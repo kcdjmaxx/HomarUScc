@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md
 // Built-in tool: read — from HomarUS
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";

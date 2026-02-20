@@ -1,3 +1,4 @@
+// CRC: crc-ToolRegistry.md
 // Built-in tool: glob — from HomarUS
 import { resolve } from "node:path";
 import { readdirSync, statSync, existsSync } from "node:fs";

@@ -1,3 +1,4 @@
+// CRC: crc-DashboardFrontend.md
 import { useMemo } from "react";
 
 interface WsMessage {

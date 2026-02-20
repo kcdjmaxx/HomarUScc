@@ -1,3 +1,4 @@
+// CRC: crc-EmbeddingProvider.md | Seq: seq-memory-search.md
 // Embedding providers — from HomarUS
 import type { Logger } from "./types.js";
 import type { EmbeddingProvider } from "./memory-index.js";

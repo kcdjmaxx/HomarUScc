@@ -1,3 +1,4 @@
+// CRC: crc-TelegramChannelAdapter.md | Seq: seq-event-flow.md
 // Telegram adapter — from HomarUS
 import type { OutboundMessage, HealthStatus, Logger, ChannelConfig, DmPolicy, GroupPolicy } from "./types.js";
 import { ChannelAdapter } from "./channel-adapter.js";

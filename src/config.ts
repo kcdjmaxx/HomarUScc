@@ -1,3 +1,4 @@
+// CRC: crc-Config.md | Seq: seq-startup.md
 // Config system — adapted from HomarUS for homaruscc
 import { readFileSync, existsSync, watchFile, unwatchFile } from "node:fs";
 import { resolve, dirname } from "node:path";

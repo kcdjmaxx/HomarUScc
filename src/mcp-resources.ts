@@ -1,3 +1,4 @@
+// CRC: crc-McpServer.md
 // MCP resource definitions exposed to Claude Code
 import type { HomarUScc } from "./homaruscc.js";
 

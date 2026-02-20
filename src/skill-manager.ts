@@ -1,3 +1,4 @@
+// CRC: crc-SkillManager.md | Seq: seq-startup.md
 // Skill manager — from HomarUS
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";

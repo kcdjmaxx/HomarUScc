@@ -1,3 +1,4 @@
+// CRC: crc-DashboardFrontend.md | Seq: seq-event-flow.md
 import { useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { Sidebar } from "./components/Sidebar";
