@@ -117,3 +117,14 @@
 - **R72:** Hot-reload config file every 2 seconds with safe/unsafe change classification
 - **R73:** Safe changes (memory.search, skills.paths, timers.enabled, dashboard.enabled) apply without restart
 - **R74:** Parse errors during reload retain old config
+
+## Feature: Auto-Flush Before Compaction
+**Source:** specs/auto-flush.md
+
+- **R75:** Expose /api/pre-compact endpoint that returns a flush prompt summarizing what should be persisted before compaction
+- **R76:** Expose /api/post-compact endpoint that returns critical context for re-injection after compaction
+- **R77:** Track flush state per compaction cycle — prevent duplicate flushes, reset on post-compact
+- **R78:** Log pre-compact and post-compact events to event history
+- **R79:** Post-compact response includes: active timer names, current task context, identity file paths, recent memory keys
+- **R80:** Pre-compact response includes: a prompt instructing the agent to save recent conversation topics, decisions, task progress, and unsaved observations to memory
+- **R81:** (inferred) Provide hook configuration in setup/installation instructions for users to add to their Claude Code settings

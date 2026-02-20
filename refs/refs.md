@@ -32,6 +32,22 @@
 - **Status:** active
 - **Summary:** JavaScript cron scheduler with timezone support.
 
+## ref-claude-code-hooks
+- **Source:** https://code.claude.com/docs/en/hooks-guide
+- **Type:** web
+- **Fetched:** 2026-02-20
+- **Requirements:** R75, R76, R78, R81
+- **Status:** active
+- **Summary:** Claude Code hooks system — PreCompact and SessionStart hooks for detecting and responding to context compaction.
+
+## ref-openclaw-compaction
+- **Source:** https://docs.openclaw.ai/concepts/compaction
+- **Type:** web
+- **Fetched:** 2026-02-20
+- **Requirements:** R75, R77, R80
+- **Status:** active
+- **Summary:** OpenClaw's auto-flush before compaction — two-threshold token counting with silent agentic turn for memory persistence.
+
 ## ref-playwright
 - **Source:** https://playwright.dev/docs/api/class-browsertype
 - **Type:** web

@@ -285,6 +285,15 @@ export class MemoryIndex {
     this.watcher = null;
   }
 
+  getRecentPaths(limit = 10): string[] {
+    if (!this.initialized || !this.db) return [];
+    const db = this.db as import("better-sqlite3").Database;
+    const rows = db.prepare(
+      "SELECT DISTINCT path FROM chunks ORDER BY updated_at DESC LIMIT ?"
+    ).all(limit) as Array<{ path: string }>;
+    return rows.map((r) => r.path);
+  }
+
   getStats(): { fileCount: number; chunkCount: number; indexedPaths: string[] } {
     if (!this.initialized || !this.db) {
       return { fileCount: 0, chunkCount: 0, indexedPaths: this.indexedPaths };

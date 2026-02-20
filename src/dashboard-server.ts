@@ -11,6 +11,7 @@ import type { HomarUScc } from "./homaruscc.js";
 import type { DashboardAdapter } from "./dashboard-adapter.js";
 import { createMcpTools, type McpToolDef } from "./mcp-tools.js";
 import { createMcpResources, type McpResourceDef } from "./mcp-resources.js";
+import { CompactionManager } from "./compaction-manager.js";
 
 interface WsMessage {
   type: "chat" | "search" | "status" | "events";
@@ -33,6 +34,7 @@ export class DashboardServer {
   private dashboardAdapter: DashboardAdapter;
   private mcpTools: McpToolDef[];
   private mcpResources: McpResourceDef[];
+  private compactionManager: CompactionManager;
 
   constructor(logger: Logger, port: number, loop: HomarUScc, dashboardAdapter: DashboardAdapter) {
     this.logger = logger;
@@ -41,6 +43,7 @@ export class DashboardServer {
     this.dashboardAdapter = dashboardAdapter;
     this.mcpTools = createMcpTools(loop);
     this.mcpResources = createMcpResources(loop);
+    this.compactionManager = new CompactionManager(loop, logger);
 
     this.app = express();
     this.httpServer = createServer(this.app);
@@ -180,6 +183,17 @@ export class DashboardServer {
     // --- Proxy API routes (used by mcp-proxy.ts) ---
     this.app.get("/api/health", (_req, res) => {
       res.json({ ok: true, state: "running" });
+    });
+
+    // --- Compaction hooks (called by Claude Code PreCompact/SessionStart hooks) ---
+    this.app.get("/api/pre-compact", (_req, res) => {
+      const prompt = this.compactionManager.handlePreCompact();
+      res.type("text/plain").send(prompt);
+    });
+
+    this.app.get("/api/post-compact", (_req, res) => {
+      const context = this.compactionManager.handlePostCompact();
+      res.type("text/plain").send(context);
     });
 
     this.app.get("/api/tool-list", (_req, res) => {

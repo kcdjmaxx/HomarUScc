@@ -44,6 +44,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-Skill.md → `src/skill.ts`
 - [x] crc-SkillTransport.md → `src/skill-transport.ts`
 - [x] crc-DashboardFrontend.md → `dashboard/src/App.tsx`, `dashboard/src/hooks/useWebSocket.ts`, `dashboard/src/components/Chat.tsx`, `dashboard/src/components/EventLog.tsx`, `dashboard/src/components/StatusPanel.tsx`, `dashboard/src/components/MemoryBrowser.tsx`, `dashboard/src/components/Sidebar.tsx`
+- [x] crc-CompactionManager.md → `src/compaction-manager.ts`
 
 ### Sequences
 - [x] seq-startup.md → `src/homaruscc.ts`, `src/mcp-server.ts`
@@ -52,6 +53,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-memory-search.md → `src/memory-index.ts`, `src/embedding-provider.ts`, `src/mcp-tools.ts`
 - [x] seq-timer-fire.md → `src/timer-service.ts`, `src/homaruscc.ts`, `src/mcp-server.ts`
 - [x] seq-browser-action.md → `src/browser-service.ts`, `src/mcp-tools.ts`
+- [x] seq-compaction-flush.md → `src/compaction-manager.ts`, `src/dashboard-server.ts`
 
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`
@@ -67,3 +69,5 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] O4: types.ts has no CRC card (shared types file, not a class — acceptable)
 - [x] O5: bin/event-loop has no traceability comment (bash script, not TypeScript — acceptable)
 - [x] O6: dashboard/src/main.tsx has no traceability comment (React entry point, trivial — acceptable)
+
+- [ ] O7: Hook configuration instructions not yet added to README or setup docs (R81)
