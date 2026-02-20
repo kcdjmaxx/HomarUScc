@@ -35,7 +35,7 @@ HomarUScc grew out of the same lineage as OpenClaw (formerly ClawdBot/MoltBot). 
 | Active when      | Claude Code session is open (or headless on a server)       | 24/7, independent of any IDE                                                                                               |
 | Model access     | Claude (via Claude Code)                                    | Any model via OpenRouter/OpenAI-compatible APIs                                                                            |
 | Channels         | Telegram, web dashboard                                     | WhatsApp, Telegram, Discord, Slack, Signal, iMessage, Teams, Matrix, email, Google Chat                                    |
-| Memory           | Built-in hybrid vector+FTS (SQLite, Ollama embeddings)      | Built-in hybrid BM25+vector with temporal decay, MMR re-ranking, auto-flush before compaction, session transcript indexing |
+| Memory           | Built-in hybrid vector+FTS (SQLite, Ollama embeddings) with auto-flush before compaction | Built-in hybrid BM25+vector with temporal decay, MMR re-ranking, auto-flush before compaction, session transcript indexing |
 | Identity         | soul.md + user.md injected via event loop                   | SOUL.md + AGENTS.md + USER.md + workspace files injected into system prompt                                                |
 | Self-improvement | Can edit own source, recompile, restart backend live        | Cannot modify own runtime code (changes require manual deploy)                                                             |
 | Code creation    | Full access via Claude Code tools (LSP, git, file editing)  | exec + read/write/edit + apply_patch + sub-agents                                                                          |
@@ -48,7 +48,7 @@ HomarUScc grew out of the same lineage as OpenClaw (formerly ClawdBot/MoltBot). 
 
 Be honest about this. OpenClaw is a more mature, more capable platform in several dimensions:
 
-- **Memory sophistication** -- OpenClaw's memory system is significantly more advanced. Temporal decay (30-day half-life) prevents stale results from dominating. MMR re-ranking ensures diversity. Auto-flush before context compaction silently preserves important memories. Session transcript indexing lets the agent search its own past conversations. HomarUScc has basic hybrid search but lacks all of these refinements.
+- **Memory sophistication** -- OpenClaw's memory system is more advanced in some areas. Temporal decay (30-day half-life) prevents stale results from dominating. MMR re-ranking ensures diversity. Session transcript indexing lets the agent search its own past conversations. HomarUScc now has auto-flush before compaction (matching OpenClaw) but still lacks temporal decay, MMR re-ranking, and transcript indexing.
 - **Channel breadth** -- 10+ messaging channels vs. Telegram only. If you need WhatsApp, Discord, Slack, or email reach, OpenClaw wins by default.
 - **Workflow automation** -- Lobster is a deterministic pipeline engine with human approval gates. HomarUScc has no equivalent; automation is ad-hoc via timers and event handling.
 - **Skills ecosystem** -- ClawHub provides a public registry of installable skill modules. HomarUScc has no plugin marketplace.
@@ -72,7 +72,7 @@ The advantages are real but narrower:
 **HomarUScc:**
 - Tied to Claude as the model (no switching)
 - Single messaging channel (Telegram only, currently)
-- Memory is simpler than OpenClaw's (no temporal decay, no transcript indexing, no auto-flush)
+- Memory is simpler than OpenClaw's (no temporal decay, no transcript indexing, no MMR re-ranking)
 - No plugin ecosystem or workflow engine
 - MCP protocol constraints limit some interaction patterns
 - Local SQLite memory doesn't sync between machines
@@ -230,5 +230,5 @@ The specific gap HomarUScc fills: an MCP-native autonomous agent with persistent
 - **Anthropic builds it natively** -- if Claude Code gets built-in memory/messaging/scheduling, the window narrows. Speed matters.
 - **"Just a bunch of MCP tools" objection** -- counter with the identity/self-improvement story. Tools don't know who they are.
 - **"Why not just use OpenClaw?" objection** -- counter honestly: OpenClaw is more capable in several areas. HomarUScc's edge is self-improvement + Claude Code native + zero-token idle + simpler setup. Different tools for different contexts.
-- **Memory is less sophisticated than OpenClaw's** -- this is true today. Roadmap should include temporal decay, auto-flush, and transcript indexing to close the gap.
+- **Memory is less sophisticated than OpenClaw's** -- auto-flush is now implemented. Remaining gaps: temporal decay, MMR re-ranking, and transcript indexing are on the roadmap.
 - **Single channel (Telegram)** -- adding more channels would strengthen the "use both" story. At minimum, consider Discord and email.

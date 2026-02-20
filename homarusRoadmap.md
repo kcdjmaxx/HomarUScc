@@ -8,12 +8,12 @@ Ranked by impact on differentiation and user value. Each item includes what Open
 
 OpenClaw's memory system is substantially more mature. This is the most impactful gap because memory quality directly affects agent usefulness in every interaction.
 
-### 1a. Auto-flush before context compaction
+### 1a. Auto-flush before context compaction ✅ DONE (c2e34a3)
 - **OpenClaw:** Runs a silent agentic turn before context compaction that prompts the model to write important information to memory files. Prevents memory loss during long sessions.
-- **HomarUScc:** No compaction awareness. When Claude Code compacts context, anything not explicitly stored is lost.
-- **Gap:** High. This is a silent data loss problem users won't even notice until they wonder why the agent forgot something.
-- **Effort:** Medium. Need to detect when context is approaching limits and trigger a memory-save pass before compaction.
-- **Attack order: 1st** -- this prevents invisible data loss, which is the worst kind of bug.
+- **HomarUScc:** CompactionManager detects approaching context limits and triggers a memory-save pass before Claude Code compacts. Implemented via `src/compaction-manager.ts`.
+- **Gap:** Closed.
+- **Effort:** Medium. Done.
+- **Attack order: 1st** -- completed 2026-02-20.
 
 ### 1b. Temporal decay on search results
 - **OpenClaw:** 30-day half-life exponential decay. Six-month-old memories score at ~1.6%. Evergreen files (MEMORY.md, undated content) skip decay.
@@ -121,7 +121,7 @@ OpenClaw supports any OpenRouter model with fallback chains and per-request thin
 
 | Order | Item | Effort | Impact |
 |-------|------|--------|--------|
-| 1 | Auto-flush before compaction | Medium | Prevents invisible memory loss |
+| ~~1~~ | ~~Auto-flush before compaction~~ | ~~Medium~~ | ~~Done (c2e34a3)~~ |
 | 2 | Temporal decay on search | Low | Better search relevance, data already exists |
 | 3 | MMR diversity re-ranking | Low-medium | Better search result quality |
 | 4 | Discord channel | Medium | Reaches developer community where they live |

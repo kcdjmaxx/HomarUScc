@@ -17,7 +17,7 @@ Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
                                     +-- Telegram (long-polling adapter)
                                     +-- Dashboard (Express + WebSocket SPA)
                                     +-- Timer service (cron / interval / one-shot)
-                                    +-- Memory index (SQLite + vector + FTS)
+                                    +-- Memory index (SQLite + vector + FTS + auto-flush)
                                     +-- Browser automation (Playwright)
                                     +-- Identity manager (soul.md / user.md)
                                     +-- Skill plugins (hot-loadable)
@@ -181,6 +181,7 @@ Key source files:
 | `src/dashboard-server.ts` | Express + WebSocket dashboard server |
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search |
+| `src/compaction-manager.ts` | Auto-flush memory before context compaction |
 | `src/identity-manager.ts` | soul.md / user.md / overlay loader |
 | `src/timer-service.ts` | Cron, interval, and one-shot timers |
 | `src/browser-service.ts` | Playwright browser automation |
