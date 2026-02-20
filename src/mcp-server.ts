@@ -76,6 +76,7 @@ async function main(): Promise<void> {
   if (dashboardConfig?.enabled !== false) {
     const dashboardAdapter = new DashboardAdapter(logger);
     loop.getChannelManager().registerAdapter(dashboardAdapter);
+    await dashboardAdapter.connect();
     dashboardAdapter.onMessage((event) => loop.emit(event));
 
     dashboardServer = new DashboardServer(

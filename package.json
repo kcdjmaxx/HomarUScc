@@ -8,6 +8,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/mcp-server.js",
+    "start:proxy": "node dist/mcp-proxy.js",
+    "start:backend": "node dist/backend.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:dashboard": "cd dashboard && npm run build",

@@ -9,6 +9,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { Logger, Event } from "./types.js";
 import type { HomarUScc } from "./homaruscc.js";
 import type { DashboardAdapter } from "./dashboard-adapter.js";
+import { createMcpTools, type McpToolDef } from "./mcp-tools.js";
+import { createMcpResources, type McpResourceDef } from "./mcp-resources.js";
 
 interface WsMessage {
   type: "chat" | "search" | "status" | "events";
@@ -29,12 +31,16 @@ export class DashboardServer {
   private logger: Logger;
   private loop: HomarUScc;
   private dashboardAdapter: DashboardAdapter;
+  private mcpTools: McpToolDef[];
+  private mcpResources: McpResourceDef[];
 
   constructor(logger: Logger, port: number, loop: HomarUScc, dashboardAdapter: DashboardAdapter) {
     this.logger = logger;
     this.port = port;
     this.loop = loop;
     this.dashboardAdapter = dashboardAdapter;
+    this.mcpTools = createMcpTools(loop);
+    this.mcpResources = createMcpResources(loop);
 
     this.app = express();
     this.httpServer = createServer(this.app);
@@ -168,6 +174,58 @@ export class DashboardServer {
         }
       } catch {
         res.status(204).end();
+      }
+    });
+
+    // --- Proxy API routes (used by mcp-proxy.ts) ---
+    this.app.get("/api/health", (_req, res) => {
+      res.json({ ok: true, state: "running" });
+    });
+
+    this.app.get("/api/tool-list", (_req, res) => {
+      res.json(this.mcpTools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })));
+    });
+
+    this.app.post("/api/tool-call", express.json(), async (req, res) => {
+      const { name, args } = req.body as { name: string; args: Record<string, unknown> };
+      const tool = this.mcpTools.find((t) => t.name === name);
+      if (!tool) {
+        res.status(404).json({ content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true });
+        return;
+      }
+      try {
+        const result = await tool.handler(args ?? {});
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ content: [{ type: "text", text: `Tool error: ${String(err)}` }], isError: true });
+      }
+    });
+
+    this.app.get("/api/resource-list", (_req, res) => {
+      res.json(this.mcpResources.map((r) => ({
+        uri: r.uri,
+        name: r.name,
+        description: r.description,
+        mimeType: r.mimeType,
+      })));
+    });
+
+    this.app.post("/api/resource", express.json(), async (req, res) => {
+      const { uri } = req.body as { uri: string };
+      const resource = this.mcpResources.find((r) => r.uri === uri);
+      if (!resource) {
+        res.status(404).json({ error: `Unknown resource: ${uri}` });
+        return;
+      }
+      try {
+        const text = await resource.handler();
+        res.json({ uri: resource.uri, mimeType: resource.mimeType, text });
+      } catch (err) {
+        res.status(500).json({ error: `Resource error: ${String(err)}` });
       }
     });
 

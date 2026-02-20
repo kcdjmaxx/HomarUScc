@@ -9,7 +9,10 @@ Built with [mini-spec](https://github.com/zot/mini-spec).
 ## How It Works
 
 ```
-Claude Code <-> MCP (stdio) <-> HomarUScc
+Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
+                                    |  auto-spawns + HTTP forwarding
+                                    v
+                              Backend (backend.ts)
                                     |
                                     +-- Telegram (long-polling adapter)
                                     +-- Dashboard (Express + WebSocket SPA)
@@ -20,6 +23,8 @@ Claude Code <-> MCP (stdio) <-> HomarUScc
                                     +-- Skill plugins (hot-loadable)
                                     +-- Tool registry (bash, fs, git, web, memory)
 ```
+
+The proxy is thin and never restarts. The backend can be restarted (via `restart_backend` tool) for self-improvement without dropping the MCP connection.
 
 Events arrive from channels (Telegram messages, dashboard chat, timer fires) and flow into the event loop. HomarUScc sends MCP notifications to Claude Code, which reasons about them and calls MCP tools to respond.
 
@@ -76,7 +81,7 @@ Register HomarUScc as an MCP server in `.claude/settings.json`:
   "mcpServers": {
     "homaruscc": {
       "command": "node",
-      "args": ["/absolute/path/to/HomarUScc/dist/mcp-server.js"],
+      "args": ["/absolute/path/to/HomarUScc/dist/mcp-proxy.js"],
       "env": {
         "HOMARUSCC_CONFIG": "~/.homaruscc/config.json"
       }
@@ -85,7 +90,7 @@ Register HomarUScc as an MCP server in `.claude/settings.json`:
 }
 ```
 
-Restart Claude Code. HomarUScc's tools will appear automatically.
+Restart Claude Code. HomarUScc's tools will appear automatically. The proxy auto-spawns the backend process — no manual startup needed.
 
 ## MCP Tools
 
@@ -166,7 +171,9 @@ Key source files:
 | File | Purpose |
 |------|---------|
 | `src/homaruscc.ts` | Event loop orchestrator |
-| `src/mcp-server.ts` | MCP stdio server entry point |
+| `src/mcp-proxy.ts` | MCP stdio proxy — auto-spawns backend, forwards tool calls over HTTP |
+| `src/backend.ts` | Standalone backend process (Telegram, timers, dashboard, memory) |
+| `src/mcp-server.ts` | Legacy single-process MCP server (unused in two-process mode) |
 | `src/mcp-tools.ts` | MCP tool definitions |
 | `src/mcp-resources.ts` | MCP resource definitions |
 | `src/config.ts` | Config loader with env var resolution and hot-reload |

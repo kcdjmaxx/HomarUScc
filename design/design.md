@@ -23,6 +23,8 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 
 ### CRC Cards
 - [x] crc-McpServer.md → `src/mcp-server.ts`, `src/mcp-tools.ts`, `src/mcp-resources.ts`
+- [x] crc-McpProxy.md → `src/mcp-proxy.ts`
+- [x] crc-Backend.md → `src/backend.ts`
 - [x] crc-HomarUScc.md → `src/homaruscc.ts`
 - [x] crc-EventBus.md → `src/event-bus.ts`
 - [x] crc-EventQueue.md → `src/event-queue.ts`
