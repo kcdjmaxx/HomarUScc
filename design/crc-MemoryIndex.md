@@ -26,5 +26,9 @@
 - EmbeddingProvider: generate vector embeddings
 - HomarUScc: provides memory config
 
+## Implementation Notes
+- sqlite-vec v0.1.6 requires Uint8Array (not Float32Array) for embedding data and CAST(? AS INTEGER) for vec0 primary key binding with better-sqlite3 v11+
+- Default minScore is 0.1 (not 0.3) to avoid filtering valid vector matches after weighting
+
 ## Sequences
 - seq-memory-search.md

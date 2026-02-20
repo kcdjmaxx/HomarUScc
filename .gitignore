@@ -32,6 +32,10 @@ user/
 # System runtime data (learned corrections)
 system/
 
+# Memory runtime data (stored by memory_store tool)
+competitor-intel/
+research/
+
 # OS files
 .DS_Store
 Thumbs.db

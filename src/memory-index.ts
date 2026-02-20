@@ -149,11 +149,12 @@ export class MemoryIndex {
         const rows = db.prepare("SELECT id FROM chunks WHERE path = ? ORDER BY chunk_index").all(path) as Array<{ id: number }>;
 
         const insertVec = db.prepare(
-          "INSERT OR REPLACE INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)"
+          "INSERT OR REPLACE INTO chunks_vec (chunk_id, embedding) VALUES (CAST(? AS INTEGER), ?)"
         );
         const insertVecs = db.transaction(() => {
           for (let i = 0; i < rows.length && i < embeddings.length; i++) {
-            insertVec.run(rows[i].id, new Float32Array(embeddings[i]));
+            const embBuf = new Uint8Array(new Float32Array(embeddings[i]).buffer);
+            insertVec.run(rows[i].id, embBuf);
           }
         });
         insertVecs();
@@ -182,7 +183,7 @@ export class MemoryIndex {
 
     const db = this.db as import("better-sqlite3").Database;
     const limit = options?.limit ?? 10;
-    const minScore = options?.minScore ?? 0.3;
+    const minScore = options?.minScore ?? 0.1;
     const results = new Map<number, { path: string; content: string; score: number; chunkIndex: number }>();
 
     try {
@@ -221,7 +222,7 @@ export class MemoryIndex {
           WHERE embedding MATCH ?
           ORDER BY distance
           LIMIT ?
-        `).all(new Float32Array(queryEmb), limit * 2) as Array<{
+        `).all(new Uint8Array(new Float32Array(queryEmb).buffer), limit * 2) as Array<{
           chunk_id: number; distance: number;
         }>;
 
