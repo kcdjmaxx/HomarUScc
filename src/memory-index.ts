@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { watch, type FSWatcher } from "node:fs";
-import type { Logger } from "./types.js";
+import type { Logger, MemoryConfig } from "./types.js";
 
 export interface SearchResult {
   path: string;
@@ -30,6 +30,10 @@ interface Chunk {
   content: string;
 }
 
+// R82-R89: Temporal decay on search results
+const DEFAULT_EVERGREEN_PATTERNS = ["MEMORY.md", "SOUL.md", "USER.md"];
+const MS_PER_DAY = 86_400_000;
+
 export class MemoryIndex {
   private db: unknown = null;
   private embeddingProvider: EmbeddingProvider | null = null;
@@ -37,6 +41,9 @@ export class MemoryIndex {
   private chunkOverlap: number;
   private vectorWeight: number;
   private ftsWeight: number;
+  private decayEnabled: boolean;
+  private decayHalfLifeDays: number;
+  private evergreenPatterns: string[];
   private indexedPaths: string[] = [];
   private watcher: FSWatcher | null = null;
   private logger: Logger;
@@ -47,16 +54,29 @@ export class MemoryIndex {
     chunkOverlap?: number;
     vectorWeight?: number;
     ftsWeight?: number;
+    decayEnabled?: boolean;
+    decayHalfLifeDays?: number;
+    evergreenPatterns?: string[];
   }) {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
     this.chunkOverlap = options?.chunkOverlap ?? 80;
     this.vectorWeight = options?.vectorWeight ?? 0.7;
     this.ftsWeight = options?.ftsWeight ?? 0.3;
+    this.decayEnabled = options?.decayEnabled ?? true;
+    this.decayHalfLifeDays = options?.decayHalfLifeDays ?? 30;
+    this.evergreenPatterns = options?.evergreenPatterns ?? DEFAULT_EVERGREEN_PATTERNS;
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider): void {
     this.embeddingProvider = provider;
+  }
+
+  // CRC: crc-MemoryIndex.md | R86
+  setDecayConfig(config: NonNullable<MemoryConfig["decay"]>): void {
+    if (config.enabled !== undefined) this.decayEnabled = config.enabled;
+    if (config.halfLifeDays !== undefined) this.decayHalfLifeDays = config.halfLifeDays;
+    if (config.evergreenPatterns !== undefined) this.evergreenPatterns = config.evergreenPatterns;
   }
 
   async initialize(dbPath: string): Promise<void> {
@@ -184,11 +204,11 @@ export class MemoryIndex {
     const db = this.db as import("better-sqlite3").Database;
     const limit = options?.limit ?? 10;
     const minScore = options?.minScore ?? 0.1;
-    const results = new Map<number, { path: string; content: string; score: number; chunkIndex: number }>();
+    const results = new Map<number, { path: string; content: string; score: number; chunkIndex: number; updatedAt: number }>();
 
     try {
       const ftsResults = db.prepare(`
-        SELECT c.id, c.path, c.content, c.chunk_index,
+        SELECT c.id, c.path, c.content, c.chunk_index, c.updated_at,
                bm25(chunks_fts) AS rank
         FROM chunks_fts f
         JOIN chunks c ON c.id = f.rowid
@@ -196,7 +216,7 @@ export class MemoryIndex {
         ORDER BY rank
         LIMIT ?
       `).all(query, limit * 2) as Array<{
-        id: number; path: string; content: string; chunk_index: number; rank: number;
+        id: number; path: string; content: string; chunk_index: number; updated_at: number; rank: number;
       }>;
 
       const maxRank = ftsResults.length > 0 ? Math.max(...ftsResults.map((r) => Math.abs(r.rank))) : 1;
@@ -207,6 +227,7 @@ export class MemoryIndex {
           content: row.content,
           score: normalizedScore * this.ftsWeight,
           chunkIndex: row.chunk_index,
+          updatedAt: row.updated_at,
         });
       }
     } catch {
@@ -232,20 +253,28 @@ export class MemoryIndex {
           if (existing) {
             existing.score += similarity * this.vectorWeight;
           } else {
-            const chunk = db.prepare("SELECT path, content, chunk_index FROM chunks WHERE id = ?")
-              .get(row.chunk_id) as { path: string; content: string; chunk_index: number } | undefined;
+            const chunk = db.prepare("SELECT path, content, chunk_index, updated_at FROM chunks WHERE id = ?")
+              .get(row.chunk_id) as { path: string; content: string; chunk_index: number; updated_at: number } | undefined;
             if (chunk) {
               results.set(row.chunk_id, {
                 path: chunk.path,
                 content: chunk.content,
                 score: similarity * this.vectorWeight,
                 chunkIndex: chunk.chunk_index,
+                updatedAt: chunk.updated_at,
               });
             }
           }
         }
       } catch (err) {
         this.logger.debug("Vector search failed", { error: String(err) });
+      }
+    }
+
+    // CRC: crc-MemoryIndex.md | R82, R87
+    if (this.decayEnabled) {
+      for (const result of results.values()) {
+        result.score *= this.computeDecay(result.updatedAt, result.path);
       }
     }
 
@@ -302,6 +331,19 @@ export class MemoryIndex {
     const fileCount = (db.prepare("SELECT COUNT(DISTINCT path) AS c FROM chunks").get() as { c: number }).c;
     const chunkCount = (db.prepare("SELECT COUNT(*) AS c FROM chunks").get() as { c: number }).c;
     return { fileCount, chunkCount, indexedPaths: this.indexedPaths };
+  }
+
+  // CRC: crc-MemoryIndex.md | R82, R83
+  private computeDecay(updatedAt: number, path: string): number {
+    if (!updatedAt || this.isEvergreen(path)) return 1.0;
+    const ageDays = (Date.now() - updatedAt) / MS_PER_DAY;
+    if (ageDays <= 0) return 1.0;
+    return Math.pow(0.5, ageDays / this.decayHalfLifeDays);
+  }
+
+  // CRC: crc-MemoryIndex.md | R84, R85, R88
+  private isEvergreen(path: string): boolean {
+    return this.evergreenPatterns.some((pattern) => path.endsWith(pattern));
   }
 
   private chunkContent(content: string, path: string): Chunk[] {

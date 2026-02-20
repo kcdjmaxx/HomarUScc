@@ -148,6 +148,11 @@ export interface MemoryConfig {
     dimensions?: number;
   };
   search?: { vectorWeight?: number; ftsWeight?: number };
+  decay?: {
+    enabled?: boolean;
+    halfLifeDays?: number;
+    evergreenPatterns?: string[];
+  };
   extraPaths?: string[];
 }
 

@@ -17,8 +17,12 @@ ClaudeCode     McpServer      McpTools      MemoryIndex    EmbeddingProvider    
     |              |              |              |<--cosine scores-------------------------|
     |              |              |              |                |                |
     |              |              |              |--combine scores                 |
+    |              |              |              |--fetch updated_at for each----->|
+    |              |              |              |<--timestamps--------------------|
+    |              |              |              |--apply decay multiplier         |
+    |              |              |              |  (skip evergreen paths)         |
     |              |              |              |--filter minScore                |
-    |              |              |              |--sort by combined               |
+    |              |              |              |--sort by decayed score          |
     |              |              |<--results----|                |                |
     |              |<--formatted--|              |                |                |
     |<--result-----|              |              |                |                |

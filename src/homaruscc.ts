@@ -154,6 +154,9 @@ export class HomarUScc {
     // 3. Memory
     const home = process.env.HOME ?? ".";
     const memoryConfig = configData.memory;
+    if (memoryConfig?.decay) {
+      this.memoryIndex.setDecayConfig(memoryConfig.decay);
+    }
     if (memoryConfig?.embedding) {
       const embeddingProvider = createEmbeddingProvider({
         provider: memoryConfig.embedding.provider,

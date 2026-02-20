@@ -128,3 +128,15 @@
 - **R79:** Post-compact response includes: active timer names, current task context, identity file paths, recent memory keys
 - **R80:** Pre-compact response includes: a prompt instructing the agent to save recent conversation topics, decisions, task progress, and unsaved observations to memory
 - **R81:** (inferred) Provide hook configuration in setup/installation instructions for users to add to their Claude Code settings
+
+## Feature: Temporal Decay on Memory Search
+**Source:** specs/temporal-decay.md
+
+- **R82:** Apply exponential decay multiplier to search scores based on chunk age: `0.5 ^ (ageDays / halfLifeDays)`
+- **R83:** Default half-life is 30 days (configurable via `memory.decay.halfLifeDays`)
+- **R84:** Evergreen content (matching configurable path patterns) gets decay multiplier of 1.0 regardless of age
+- **R85:** Default evergreen patterns: `MEMORY.md`, `SOUL.md`, `USER.md`
+- **R86:** Decay is configurable: `memory.decay.enabled` (default true), `memory.decay.halfLifeDays` (default 30), `memory.decay.evergreenPatterns` (default list)
+- **R87:** Decay multiplier is applied after hybrid score computation but before minScore filter and final sort
+- **R88:** Chunks with no `updated_at` timestamp are treated as evergreen (no decay)
+- **R89:** (inferred) Decay is a search-time-only change — no schema or indexing modifications
