@@ -44,6 +44,8 @@ export class MemoryIndex {
   private decayEnabled: boolean;
   private decayHalfLifeDays: number;
   private evergreenPatterns: string[];
+  private mmrEnabled: boolean;
+  private mmrLambda: number;
   private indexedPaths: string[] = [];
   private watcher: FSWatcher | null = null;
   private logger: Logger;
@@ -57,6 +59,8 @@ export class MemoryIndex {
     decayEnabled?: boolean;
     decayHalfLifeDays?: number;
     evergreenPatterns?: string[];
+    mmrEnabled?: boolean;
+    mmrLambda?: number;
   }) {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
@@ -66,6 +70,8 @@ export class MemoryIndex {
     this.decayEnabled = options?.decayEnabled ?? true;
     this.decayHalfLifeDays = options?.decayHalfLifeDays ?? 30;
     this.evergreenPatterns = options?.evergreenPatterns ?? DEFAULT_EVERGREEN_PATTERNS;
+    this.mmrEnabled = options?.mmrEnabled ?? true;
+    this.mmrLambda = options?.mmrLambda ?? 0.7;
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider): void {
@@ -77,6 +83,14 @@ export class MemoryIndex {
     if (config.enabled !== undefined) this.decayEnabled = config.enabled;
     if (config.halfLifeDays !== undefined) this.decayHalfLifeDays = config.halfLifeDays;
     if (config.evergreenPatterns !== undefined) this.evergreenPatterns = config.evergreenPatterns;
+  }
+
+  // CRC: crc-MemoryIndex.md | R92, R93
+  setSearchConfig(config: NonNullable<MemoryConfig["search"]>): void {
+    if (config.vectorWeight !== undefined) this.vectorWeight = config.vectorWeight;
+    if (config.ftsWeight !== undefined) this.ftsWeight = config.ftsWeight;
+    if (config.mmrEnabled !== undefined) this.mmrEnabled = config.mmrEnabled;
+    if (config.mmrLambda !== undefined) this.mmrLambda = config.mmrLambda;
   }
 
   async initialize(dbPath: string): Promise<void> {
@@ -278,10 +292,16 @@ export class MemoryIndex {
       }
     }
 
-    return [...results.values()]
-      .filter((r) => r.score >= minScore)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    const candidates = [...results.entries()]
+      .filter(([, r]) => r.score >= minScore)
+      .sort(([, a], [, b]) => b.score - a.score);
+
+    // CRC: crc-MemoryIndex.md | R90, R96
+    if (this.mmrEnabled && candidates.length > 1) {
+      return this.mmrRerank(candidates, limit, db);
+    }
+
+    return candidates.slice(0, limit).map(([, r]) => r);
   }
 
   get(path: string): string | undefined {
@@ -331,6 +351,95 @@ export class MemoryIndex {
     const fileCount = (db.prepare("SELECT COUNT(DISTINCT path) AS c FROM chunks").get() as { c: number }).c;
     const chunkCount = (db.prepare("SELECT COUNT(*) AS c FROM chunks").get() as { c: number }).c;
     return { fileCount, chunkCount, indexedPaths: this.indexedPaths };
+  }
+
+  // CRC: crc-MemoryIndex.md | R90, R91
+  private mmrRerank(
+    candidates: Array<[number, { path: string; content: string; score: number; chunkIndex: number; updatedAt: number }]>,
+    limit: number,
+    db: import("better-sqlite3").Database,
+  ): SearchResult[] {
+    const selected: Array<{ id: number; path: string; content: string; score: number; chunkIndex: number }> = [];
+    const remaining = new Map(candidates);
+
+    // Pre-fetch embeddings for MMR similarity if available
+    const embeddingCache = new Map<number, Float32Array>();
+    if (this.embeddingProvider) {
+      try {
+        for (const [id] of candidates) {
+          const row = db.prepare("SELECT embedding FROM chunks_vec WHERE chunk_id = ?").get(id) as { embedding: Buffer } | undefined;
+          if (row) {
+            embeddingCache.set(id, new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4));
+          }
+        }
+      } catch {
+        // Vector table may not exist
+      }
+    }
+
+    while (selected.length < limit && remaining.size > 0) {
+      let bestId = -1;
+      let bestMmrScore = -Infinity;
+
+      for (const [id, candidate] of remaining) {
+        const relevance = candidate.score;
+        let maxSim = 0;
+
+        for (const sel of selected) {
+          const sim = this.chunkSimilarity(id, sel.id, candidate.content, sel.content, embeddingCache);
+          if (sim > maxSim) maxSim = sim;
+        }
+
+        const mmrScore = this.mmrLambda * relevance - (1 - this.mmrLambda) * maxSim;
+        if (mmrScore > bestMmrScore) {
+          bestMmrScore = mmrScore;
+          bestId = id;
+        }
+      }
+
+      if (bestId === -1) break;
+      const best = remaining.get(bestId)!;
+      selected.push({ id: bestId, ...best });
+      remaining.delete(bestId);
+    }
+
+    return selected.map(({ path, content, score, chunkIndex }) => ({ path, content, score, chunkIndex }));
+  }
+
+  // CRC: crc-MemoryIndex.md | R94, R95
+  private chunkSimilarity(
+    idA: number, idB: number,
+    contentA: string, contentB: string,
+    embeddingCache: Map<number, Float32Array>,
+  ): number {
+    const embA = embeddingCache.get(idA);
+    const embB = embeddingCache.get(idB);
+    if (embA && embB) return this.cosineSimilarity(embA, embB);
+    return this.jaccardSimilarity(contentA, contentB);
+  }
+
+  // CRC: crc-MemoryIndex.md | R94
+  private cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom > 0 ? dot / denom : 0;
+  }
+
+  // CRC: crc-MemoryIndex.md | R95
+  private jaccardSimilarity(a: string, b: string): number {
+    const setA = new Set(a.toLowerCase().split(/\s+/));
+    const setB = new Set(b.toLowerCase().split(/\s+/));
+    let intersection = 0;
+    for (const word of setA) {
+      if (setB.has(word)) intersection++;
+    }
+    const union = setA.size + setB.size - intersection;
+    return union > 0 ? intersection / union : 0;
   }
 
   // CRC: crc-MemoryIndex.md | R82, R83

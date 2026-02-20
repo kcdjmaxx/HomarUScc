@@ -147,7 +147,12 @@ export interface MemoryConfig {
     apiKey?: string;
     dimensions?: number;
   };
-  search?: { vectorWeight?: number; ftsWeight?: number };
+  search?: {
+    vectorWeight?: number;
+    ftsWeight?: number;
+    mmrEnabled?: boolean;
+    mmrLambda?: number;
+  };
   decay?: {
     enabled?: boolean;
     halfLifeDays?: number;

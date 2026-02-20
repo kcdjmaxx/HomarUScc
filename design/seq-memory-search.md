@@ -22,7 +22,10 @@ ClaudeCode     McpServer      McpTools      MemoryIndex    EmbeddingProvider    
     |              |              |              |--apply decay multiplier         |
     |              |              |              |  (skip evergreen paths)         |
     |              |              |              |--filter minScore                |
-    |              |              |              |--sort by decayed score          |
+    |              |              |              |--MMR re-rank (if enabled)       |
+    |              |              |              |  loop: pick best MMR score      |
+    |              |              |              |  similarity: cosine or Jaccard  |
+    |              |              |              |--slice to limit                 |
     |              |              |<--results----|                |                |
     |              |<--formatted--|              |                |                |
     |<--result-----|              |              |                |                |

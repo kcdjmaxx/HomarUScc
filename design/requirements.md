@@ -140,3 +140,15 @@
 - **R87:** Decay multiplier is applied after hybrid score computation but before minScore filter and final sort
 - **R88:** Chunks with no `updated_at` timestamp are treated as evergreen (no decay)
 - **R89:** (inferred) Decay is a search-time-only change — no schema or indexing modifications
+
+## Feature: MMR Diversity Re-ranking
+**Source:** specs/mmr-reranking.md
+
+- **R90:** After computing hybrid scores with decay, re-rank results using MMR to balance relevance with diversity
+- **R91:** MMR score: `lambda * relevance(d) - (1 - lambda) * max_similarity(d, selected)` where relevance is the existing hybrid score
+- **R92:** Default lambda is 0.7 (configurable via `memory.search.mmrLambda`)
+- **R93:** MMR is enabled by default (configurable via `memory.search.mmrEnabled`)
+- **R94:** When embedding provider is available, use cosine similarity between chunk embeddings for diversity penalty
+- **R95:** When no embedding provider, fall back to Jaccard similarity on word sets
+- **R96:** MMR re-ranking happens after decay and minScore filter, before final slice to limit
+- **R97:** (inferred) Single results skip MMR (no re-ranking needed)

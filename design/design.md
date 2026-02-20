@@ -61,6 +61,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] test-TimerService.md → `src/timer-service.ts`
 - [x] test-ToolRegistry.md → `src/tool-registry.ts`
 - [x] test-TemporalDecay.md → `src/memory-index.ts`
+- [x] test-MMR.md → `src/memory-index.ts`
 
 ## Gaps
 

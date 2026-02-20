@@ -157,6 +157,9 @@ export class HomarUScc {
     if (memoryConfig?.decay) {
       this.memoryIndex.setDecayConfig(memoryConfig.decay);
     }
+    if (memoryConfig?.search) {
+      this.memoryIndex.setSearchConfig(memoryConfig.search);
+    }
     if (memoryConfig?.embedding) {
       const embeddingProvider = createEmbeddingProvider({
         provider: memoryConfig.embedding.provider,
