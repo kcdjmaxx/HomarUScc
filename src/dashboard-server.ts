@@ -288,6 +288,11 @@ export class DashboardServer {
       case "chat": {
         const { text } = msg.payload as { text: string };
         if (!text) return;
+        // Echo user message to all dashboard clients so both sides of the conversation are visible
+        this.broadcast({
+          type: "chat",
+          payload: { from: "user", text, timestamp: Date.now() },
+        });
         // Deliver chat message through the dashboard adapter → event loop → MCP
         this.dashboardAdapter.receiveFromDashboard("dashboard-user", text);
         break;

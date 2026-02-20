@@ -119,7 +119,17 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     if (message.replyTo) {
       body.reply_to_message_id = Number(message.replyTo);
     }
-    await this.apiCall("sendMessage", body);
+    try {
+      await this.apiCall("sendMessage", body);
+    } catch (err) {
+      // Markdown parse failures are common — retry without parse_mode
+      if (String(err).includes("can't parse entities")) {
+        delete body.parse_mode;
+        await this.apiCall("sendMessage", body);
+      } else {
+        throw err;
+      }
+    }
   }
 
   health(): HealthStatus {
@@ -130,6 +140,10 @@ export class TelegramChannelAdapter extends ChannelAdapter {
         : this.state,
       lastCheck: this.lastPollTime || Date.now(),
     };
+  }
+
+  async sendTyping(chatId: string): Promise<void> {
+    await this.apiCall("sendChatAction", { chat_id: chatId, action: "typing" });
   }
 
   // homaruscc addition: get recent messages for MCP tool
@@ -196,6 +210,9 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     if (this.recentMessages.length > this.maxRecentMessages) {
       this.recentMessages.shift();
     }
+
+    // Send typing indicator immediately so user sees we're processing
+    this.sendTyping(String(msg.chat.id)).catch(() => {});
 
     this.deliverWithTarget({
       from: msg.from?.username ?? String(msg.from?.id ?? "unknown"),

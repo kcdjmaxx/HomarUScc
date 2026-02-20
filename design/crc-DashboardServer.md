@@ -12,7 +12,7 @@
 - start: create Express app, mount routes, start HTTP + WS server
 - stop: close server and all WebSocket connections
 - setupRoutes: mount /api/status, /api/events, /api/timers, /api/memory/stats, /api/identity/*, /api/wait
-- handleWebSocket: process inbound WS messages (chat, search, status, events)
+- handleWebSocket: process inbound WS messages (chat, search, status, events); echo user chat messages back to all clients
 - broadcast: send message to all connected WS clients
 - handlePortConflict: kill stale process on EADDRINUSE
 

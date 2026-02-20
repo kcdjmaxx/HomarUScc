@@ -64,6 +64,32 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- telegram_typing ---
+  tools.push({
+    name: "telegram_typing",
+    description: "Send a typing indicator to a Telegram chat. Shows for up to 5 seconds or until a message is sent. Call repeatedly for long-running tasks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chatId: { type: "string", description: "Telegram chat ID" },
+      },
+      required: ["chatId"],
+    },
+    async handler(params) {
+      const { chatId } = params as { chatId: string };
+      const adapter = loop.getChannelManager().getAdapter("telegram") as TelegramChannelAdapter | undefined;
+      if (!adapter) {
+        return { content: [{ type: "text", text: "Telegram not configured" }] };
+      }
+      try {
+        await adapter.sendTyping(chatId);
+        return { content: [{ type: "text", text: "Typing indicator sent" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
   // --- memory_search ---
   tools.push({
     name: "memory_search",

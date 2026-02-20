@@ -10,7 +10,7 @@
 - activeView: current panel (chat, events, status, memory)
 
 ## Does
-- Chat: send messages via WebSocket, display incoming responses
+- Chat: send messages via WebSocket, display both user and assistant messages with distinct styling
 - EventLog: display real-time event stream from WebSocket
 - StatusPanel: show system health (channels, memory, timers, queue)
 - MemoryBrowser: search memory index, display results

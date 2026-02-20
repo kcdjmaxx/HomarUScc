@@ -50,24 +50,27 @@ export function Chat({ messages, send }: Props) {
             No messages yet. Send a message to interact with Claude Code.
           </div>
         )}
-        {chatMessages.map((msg, i) => (
+        {chatMessages.map((msg, i) => {
+          const isUser = msg.from === "user" || msg.from === "dashboard-user";
+          return (
           <div key={i} style={{
             ...styles.message,
-            alignSelf: msg.from === "dashboard-user" ? "flex-end" : "flex-start",
+            alignSelf: isUser ? "flex-end" : "flex-start",
           }}>
             <div style={{
               ...styles.bubble,
-              background: msg.from === "dashboard-user" ? "#2e1065" : "#1e1e2e",
-              borderColor: msg.from === "dashboard-user" ? "#7c3aed" : "#2e2e3e",
+              background: isUser ? "#2e1065" : "#1e1e2e",
+              borderColor: isUser ? "#7c3aed" : "#2e2e3e",
             }}>
-              <div style={styles.msgFrom}>{msg.from}</div>
+              <div style={styles.msgFrom}>{isUser ? "you" : msg.from}</div>
               <div style={styles.msgText}>{msg.text}</div>
               <div style={styles.msgTime}>
                 {new Date(msg.timestamp).toLocaleTimeString()}
               </div>
             </div>
           </div>
-        ))}
+        );
+        })}
         <div ref={bottomRef} />
       </div>
 

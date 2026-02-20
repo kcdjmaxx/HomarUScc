@@ -14,10 +14,11 @@
 ## Does
 - connect: call getMe to resolve username, start poll loop
 - disconnect: stop poll loop
-- send: call sendMessage API
+- send: call sendMessage API with Markdown parse_mode, auto-fallback to plain text on parse failure
+- sendTyping: send "typing" chat action indicator to a chat
 - health: report polling status
 - poll: call getUpdates, process each message, backoff on error
-- handleMessage: normalize Telegram message to MessagePayload, check access, deliver
+- handleMessage: normalize Telegram message to MessagePayload, check access, send typing indicator, deliver
 - detectMention: scan entities for bot_command or text_mention matching botUsername
 - getRecentMessages: return buffered messages for telegram_read tool
 - apiCall: generic Telegram Bot API HTTP call
