@@ -14,6 +14,7 @@ import { TimerService } from "./timer-service.js";
 import { BrowserService } from "./browser-service.js";
 import { createEmbeddingProvider } from "./embedding-provider.js";
 import { registerBuiltinTools } from "./tools/index.js";
+import { TranscriptLogger } from "./transcript-logger.js";
 
 export type LoopState = "starting" | "running" | "stopping" | "stopped";
 
@@ -34,6 +35,7 @@ export class HomarUScc {
   private identityManager: IdentityManager;
   private timerService!: TimerService;
   private browserService?: BrowserService;
+  private transcriptLogger?: TranscriptLogger;
   private logger: Logger;
   private processInterval: ReturnType<typeof setInterval> | null = null;
   private eventHistory: Event[] = [];
@@ -88,6 +90,10 @@ export class HomarUScc {
 
   getSkillManager(): SkillManager {
     return this.skillManager;
+  }
+
+  getTranscriptLogger(): TranscriptLogger | undefined {
+    return this.transcriptLogger;
   }
 
   getBrowserService(): BrowserService | undefined {
@@ -183,6 +189,15 @@ export class HomarUScc {
       }
     }
 
+    // 3b. Transcript logger
+    if (memoryConfig?.transcripts?.enabled !== false) {
+      this.transcriptLogger = new TranscriptLogger(this.logger, this.memoryIndex, memoryConfig?.transcripts);
+      this.transcriptLogger.start();
+      this.registerHandler("message", (event) => {
+        this.transcriptLogger?.logInbound(event);
+      });
+    }
+
     // 4. Browser service (lazy — browser only launches on first tool use)
     if (configData.browser?.enabled) {
       this.browserService = new BrowserService(this.logger, configData.browser);
@@ -255,6 +270,7 @@ export class HomarUScc {
     await this.channelManager.disconnectAll();
     await this.skillManager.stopAll();
     this.skillManager.stopWatching();
+    await this.transcriptLogger?.stop();
     this.memoryIndex.stopWatching();
 
     const remaining = this.eventQueue.clear();

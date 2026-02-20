@@ -152,3 +152,18 @@
 - **R95:** When no embedding provider, fall back to Jaccard similarity on word sets
 - **R96:** MMR re-ranking happens after decay and minScore filter, before final slice to limit
 - **R97:** (inferred) Single results skip MMR (no re-ranking needed)
+
+## Feature: Session Transcript Indexing
+**Source:** specs/session-transcripts.md
+
+- **R98:** Capture inbound message events (Telegram, dashboard) as transcript turns with timestamp, channel, direction, and sender
+- **R99:** Capture outbound responses (telegram_send, dashboard_send tool calls) as transcript turns
+- **R100:** Accumulate turns in a session buffer and periodically flush to dated markdown files
+- **R101:** Store transcripts under configurable directory (default `~/.homaruscc/transcripts/`)
+- **R102:** Flush buffer every N minutes (configurable, default 5 minutes) if non-empty
+- **R103:** Flush buffer on shutdown
+- **R104:** Index transcript files via MemoryIndex.indexFile after flush so they become searchable
+- **R105:** Transcript indexing is configurable: `memory.transcripts.enabled` (default true), `memory.transcripts.directory`, `memory.transcripts.flushIntervalMs`
+- **R106:** (inferred) Create transcript directory on first flush if it doesn't exist
+- **R107:** (inferred) Flush failures log error and retain buffer for retry
+- **R108:** (inferred) Trigger transcript flush during pre-compaction routine

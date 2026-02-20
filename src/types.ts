@@ -158,6 +158,11 @@ export interface MemoryConfig {
     halfLifeDays?: number;
     evergreenPatterns?: string[];
   };
+  transcripts?: {
+    enabled?: boolean;
+    directory?: string;
+    flushIntervalMs?: number;
+  };
   extraPaths?: string[];
 }
 

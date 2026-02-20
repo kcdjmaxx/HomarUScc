@@ -30,6 +30,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       const { chatId, text } = params as { chatId: string; text: string };
       try {
         await loop.getChannelManager().send("telegram", chatId, { text });
+        loop.getTranscriptLogger()?.logOutbound("telegram", text);
         return { content: [{ type: "text", text: `Sent to Telegram chat ${chatId}` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
@@ -191,6 +192,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       const { text } = params as { text: string };
       try {
         await loop.getChannelManager().send("dashboard", "chat", { text });
+        loop.getTranscriptLogger()?.logOutbound("dashboard", text);
         return { content: [{ type: "text", text: "Sent to dashboard" }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };

@@ -28,6 +28,7 @@
 - BrowserService: browser automation (optional)
 - ToolRegistry: tool execution
 - SkillManager: plugin lifecycle
+- TranscriptLogger: conversation turn capture and indexing
 
 ## Sequences
 - seq-startup.md

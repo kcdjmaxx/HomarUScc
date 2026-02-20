@@ -45,6 +45,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-SkillTransport.md → `src/skill-transport.ts`
 - [x] crc-DashboardFrontend.md → `dashboard/src/App.tsx`, `dashboard/src/hooks/useWebSocket.ts`, `dashboard/src/components/Chat.tsx`, `dashboard/src/components/EventLog.tsx`, `dashboard/src/components/StatusPanel.tsx`, `dashboard/src/components/MemoryBrowser.tsx`, `dashboard/src/components/Sidebar.tsx`
 - [x] crc-CompactionManager.md → `src/compaction-manager.ts`
+- [x] crc-TranscriptLogger.md → `src/transcript-logger.ts`
 
 ### Sequences
 - [x] seq-startup.md → `src/homaruscc.ts`, `src/mcp-server.ts`
@@ -54,6 +55,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-timer-fire.md → `src/timer-service.ts`, `src/homaruscc.ts`, `src/mcp-server.ts`
 - [x] seq-browser-action.md → `src/browser-service.ts`, `src/mcp-tools.ts`
 - [x] seq-compaction-flush.md → `src/compaction-manager.ts`, `src/dashboard-server.ts`
+- [x] seq-transcript-capture.md → `src/transcript-logger.ts`, `src/homaruscc.ts`, `src/mcp-tools.ts`
 
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`
@@ -62,6 +64,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] test-ToolRegistry.md → `src/tool-registry.ts`
 - [x] test-TemporalDecay.md → `src/memory-index.ts`
 - [x] test-MMR.md → `src/memory-index.ts`
+- [x] test-TranscriptLogger.md → `src/transcript-logger.ts`
 
 ## Gaps
 

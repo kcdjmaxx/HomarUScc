@@ -16,6 +16,7 @@
 - HomarUScc: provides access to timer service, memory index, identity manager, event history
 - DashboardServer: mounts the /api/pre-compact and /api/post-compact endpoints
 - EventBus: receives logged pre-compact and post-compact events
+- TranscriptLogger: flush transcript buffer during pre-compaction
 
 ## Sequences
 - seq-compaction-flush.md

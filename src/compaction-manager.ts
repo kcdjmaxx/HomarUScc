@@ -34,6 +34,11 @@ export class CompactionManager {
 
     this.logger.info("Pre-compact flush triggered");
 
+    // R108: Flush transcript buffer before compaction
+    this.loop.getTranscriptLogger()?.flush().catch((err) =>
+      this.logger.warn("Transcript flush during compaction failed", { error: String(err) })
+    );
+
     const timerNames = this.loop.getTimerService().getAll().map((t) => t.name);
     const memoryStats = this.loop.getMemoryIndex().getStats();
     const recentEvents = this.loop.getEventHistory().slice(-10);
