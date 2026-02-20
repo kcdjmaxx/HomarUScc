@@ -25,21 +25,23 @@ Events arrive from channels (Telegram messages, dashboard chat, timer fires) and
 
 ## Requirements
 
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
 - Node.js >= 22
-- Claude Code CLI
 - (Optional) Ollama for local embeddings
 - (Optional) Playwright for browser automation
 
-## Setup
+## Installation
+
+### 1. Clone and build
 
 ```bash
+git clone https://github.com/kcdjmaxx/HomarUScc.git
+cd HomarUScc
 npm install
 npm run build
 ```
 
-### Configure
-
-Copy the example config:
+### 2. Configure
 
 ```bash
 mkdir -p ~/.homaruscc
@@ -53,9 +55,9 @@ Edit `~/.homaruscc/config.json` with your settings. Tokens use `${ENV_VAR}` synt
 TELEGRAM_BOT_TOKEN=your-bot-token-here
 ```
 
-### Identity Files
+### 3. Set up identity
 
-HomarUScc loads `soul.md` and `user.md` from your identity directory to build the system prompt. These define how your assistant behaves and what it knows about you.
+HomarUScc loads `soul.md` and `user.md` from your identity directory to shape your assistant's personality and what it knows about you.
 
 ```bash
 mkdir -p ~/.homaruscc/identity
@@ -63,18 +65,18 @@ cp identity.example/soul.md ~/.homaruscc/identity/soul.md
 cp identity.example/user.md ~/.homaruscc/identity/user.md
 ```
 
-Edit these to customize your assistant's personality and your user context.
+Edit these to make it yours.
 
-### Add to Claude Code
+### 4. Add to Claude Code
 
-Add HomarUScc as an MCP server in your Claude Code settings (`.claude/settings.json`):
+Register HomarUScc as an MCP server in `.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
     "homaruscc": {
       "command": "node",
-      "args": ["/path/to/homaruscc/dist/mcp-server.js"],
+      "args": ["/absolute/path/to/HomarUScc/dist/mcp-server.js"],
       "env": {
         "HOMARUSCC_CONFIG": "~/.homaruscc/config.json"
       }
@@ -82,6 +84,8 @@ Add HomarUScc as an MCP server in your Claude Code settings (`.claude/settings.j
   }
 }
 ```
+
+Restart Claude Code. HomarUScc's tools will appear automatically.
 
 ## MCP Tools
 
