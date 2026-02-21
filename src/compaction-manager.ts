@@ -7,6 +7,7 @@ import type { HomarUScc } from "./homaruscc.js";
 export class CompactionManager {
   private flushedThisCycle = false;
   private lastFlushTimestamp = 0;
+  private compactedSinceLastWake = false; // R150: track compaction for digest vs full delivery
   private logger: Logger;
   private loop: HomarUScc;
 
@@ -23,6 +24,7 @@ export class CompactionManager {
 
     this.flushedThisCycle = true;
     this.lastFlushTimestamp = Date.now();
+    this.compactedSinceLastWake = true; // Set here since only PreCompact hook exists in Claude Code
 
     this.loop.emit({
       id: randomUUID(),
@@ -70,6 +72,7 @@ export class CompactionManager {
 
   handlePostCompact(): string {
     this.flushedThisCycle = false;
+    this.compactedSinceLastWake = true;
 
     this.loop.emit({
       id: randomUUID(),
@@ -135,6 +138,20 @@ export class CompactionManager {
     }
 
     return lines.join("\n");
+  }
+
+  // R150: Consume-once compaction flag for digest vs full identity delivery
+  /**
+   * Returns true if compaction occurred since the last /api/wait delivery.
+   * Consuming this resets the flag — the next call returns false until
+   * another compaction happens.
+   */
+  consumeCompactionFlag(): boolean {
+    if (this.compactedSinceLastWake) {
+      this.compactedSinceLastWake = false;
+      return true;
+    }
+    return false;
   }
 
   getFlushState(): { flushedThisCycle: boolean; lastFlushTimestamp: number } {

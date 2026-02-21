@@ -68,6 +68,7 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 
 - [x] seq-compaction-checkpoint.md → `src/session-checkpoint.ts`, `src/compaction-manager.ts`, `src/dashboard-server.ts`
 - [x] seq-agent-dispatch.md → `src/agent-registry.ts`, `src/dashboard-server.ts`
+- [x] seq-agent-poll.md → `src/agent-registry.ts`
 
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`

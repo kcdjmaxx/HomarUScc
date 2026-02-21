@@ -85,6 +85,32 @@ export class IdentityManager {
     return this.stateContent;
   }
 
+  // R149: Compressed identity digest (~200 tokens) for normal event wakes
+  /**
+   * Returns a compressed identity digest (~200 tokens) for normal event wakes.
+   * Extracts name, core behavioral rules, and current mood — enough for
+   * personality consistency without the full 3K token payload.
+   */
+  getDigest(): string {
+    const lines: string[] = [];
+
+    // Extract name from soul
+    const nameMatch = this.soulContent.match(/\*\*Name:\s*(\w+)\*\*/);
+    if (nameMatch) lines.push(`You are ${nameMatch[1]}.`);
+
+    // Extract Vibe section (key behavioral rules)
+    const vibeMatch = this.soulContent.match(/## Vibe\n\n([\s\S]*?)(?=\n##|\n---)/);
+    if (vibeMatch) lines.push(vibeMatch[1].trim());
+
+    // Extract current mood/state summary (first paragraph of state.md)
+    if (this.stateContent) {
+      const moodMatch = this.stateContent.match(/## Last Session\n\n([\s\S]*?)(?=\n##)/);
+      if (moodMatch) lines.push("Last session: " + moodMatch[1].trim());
+    }
+
+    return lines.join("\n\n");
+  }
+
   getOverlay(name: string): string | undefined {
     return this.overlays.get(name);
   }

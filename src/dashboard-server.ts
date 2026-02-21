@@ -161,8 +161,7 @@ export class DashboardServer {
       res.type("text/markdown").send(this.loop.getIdentityManager().getAgentState() || "(no state file)");
     });
 
-    // Long-poll endpoint — blocks until events arrive or timeout
-    // Returns identity context alongside events so Claude re-grounds on every wake
+    // R151, R152: Long-poll endpoint — digest on normal wakes, full identity after compaction
     // Maintains a server-side delivery watermark to prevent replaying old events after compaction
     // Optional `since` query param (ms timestamp) overrides the watermark
     this.app.get("/api/wait", async (req, res) => {
@@ -174,12 +173,12 @@ export class DashboardServer {
           res.status(204).end();
         } else {
           const identity = this.loop.getIdentityManager();
+          const needsFull = this.compactionManager.consumeCompactionFlag();
+          const identityPayload = needsFull
+            ? { soul: identity.getSoul(), user: identity.getUser(), state: identity.getAgentState(), full: true }
+            : { digest: identity.getDigest(), full: false };
           res.json({
-            identity: {
-              soul: identity.getSoul(),
-              user: identity.getUser(),
-              state: identity.getAgentState(),
-            },
+            identity: identityPayload,
             events,
             cursor: this.loop.getDeliveryWatermark(),
           });

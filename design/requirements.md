@@ -219,3 +219,25 @@
 - **R146:** (inferred) Config section: `agents.maxConcurrent`, `agents.defaultModel`, `agents.defaultType`
 - **R147:** (inferred) Agent registry entries are cleaned up after results are delivered (no unbounded growth)
 - **R148:** (inferred) Skill prompt provides heuristics for inline vs dispatch decisions
+
+## Feature: Identity Digest
+**Source:** specs/identity-digest.md
+
+- **R149:** IdentityManager provides a `getDigest()` method that returns a compressed identity (~200 tokens) extracting name, Vibe section, and last session mood
+- **R150:** CompactionManager tracks a `compactedSinceLastWake` flag, set on post-compact and consumed on read
+- **R151:** `/api/wait` returns compressed digest (`identity.full: false`) on normal event wakes
+- **R152:** `/api/wait` returns full identity payload (soul, user, state, `identity.full: true`) on the first wake after context compaction
+- **R153:** Skill prompt documents both identity response formats (digest vs full) with JSON examples and branching logic
+
+## Feature: Agent Completion Polling
+**Source:** specs/agent-completion-polling.md
+
+- **R154:** AgentRegistry polls output files of registered agents to detect completion
+- **R155:** Poll interval is configurable via constructor parameter (default 5000ms)
+- **R156:** Detection checks file tail (last 512 bytes) for completion markers (`"stop_reason":"end_turn"` or `"type":"result"`) or stable mtime (no modification in 10 seconds)
+- **R157:** On detection, call existing `complete()` method which emits `agent_completed` event
+- **R158:** Only poll agents with status "running" that have an outputFile set
+- **R159:** `startPolling()` begins a single global setInterval; `stopPolling()` clears it so it does not keep the process alive
+- **R160:** (inferred) `cleanup(id)` clears any per-agent polling state
+- **R161:** (inferred) File read errors (ENOENT, permission) are logged and skipped, not thrown
+- **R162:** (inferred) Agents are only completed once — skip agents already completed/failed

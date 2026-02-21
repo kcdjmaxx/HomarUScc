@@ -221,6 +221,15 @@ The `bin/event-loop` script provides a zero-token idle loop. It long-polls the d
 bash homaruscc/bin/event-loop
 ```
 
+### Identity Digest
+
+Each wake delivers identity context so the agent stays in character. To avoid burning ~3K tokens on every event, the server uses two delivery modes:
+
+- **Normal wake** (~200 tokens) — a compressed digest: agent name, core behavioral rules, and last session mood. Enough for personality consistency without the full payload.
+- **Post-compaction wake** (~3K tokens) — full identity: `soul.md`, `user.md`, and `state.md`. Sent once after compaction when the original identity context has been compressed away.
+
+The `PreCompact` hook sets a flag on the backend. The next `/api/wait` response checks the flag and returns the appropriate format. The flag is consumed once — subsequent wakes return the digest until the next compaction.
+
 ## Compaction Resilience
 
 Claude Code compresses conversation history when the context window fills up. Without mitigation, the post-compaction agent loses track of what it was doing. HomarUScc handles this with two mechanisms:
@@ -229,7 +238,24 @@ Claude Code compresses conversation history when the context window fills up. Wi
 
 **Delivery watermark** — The server tracks the timestamp of the last event delivered to Claude Code. After compaction, the event loop resumes from the watermark instead of replaying old events. This prevents the "bad loop" problem where a post-compaction agent re-handles messages it already responded to.
 
-Both are wired into the existing `PreCompact`/`PostCompact` Claude Code hooks that call `/api/pre-compact` and `/api/post-compact`.
+Both are wired into the `PreCompact` Claude Code hook that calls `/api/pre-compact`. Add this to your project's `.claude/settings.local.json`:
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s http://127.0.0.1:3120/api/pre-compact"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ## Agent Dispatch
 
@@ -242,6 +268,8 @@ For tasks that would consume significant context (research, multi-file processin
 5. Summarize results and send to the user
 
 Max concurrent agents is configurable via `agents.maxConcurrent` in config (default 3). The agent registry tracks running/completed/failed agents and includes them in post-compaction context so background work isn't lost across compaction boundaries.
+
+**Completion detection:** The backend polls output files of registered agents every 5 seconds. When it detects a completion marker (stable file mtime for 10+ seconds, or `"stop_reason":"end_turn"` in the output), it emits an `agent_completed` event that wakes the main event loop. No manual checking needed — results arrive as events.
 
 ## Architecture
 

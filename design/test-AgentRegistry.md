@@ -36,3 +36,33 @@
 **Input:** maxConcurrent=3, register 2 agents
 **Expected:** getAvailableSlots() returns 1
 **Refs:** crc-AgentRegistry.md
+
+## Test: polling detects completion marker
+**Purpose:** Verify file tail is checked for completion markers
+**Input:** Register agent with outputFile, write file containing `"stop_reason":"end_turn"` in last 512 bytes, call pollAgents()
+**Expected:** Agent status changes to "completed", agent_completed event emitted
+**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+
+## Test: polling detects stable mtime
+**Purpose:** Verify stable mtime detection completes agent
+**Input:** Register agent with outputFile, write file with content, set mtime to 15 seconds ago, call pollAgents()
+**Expected:** Agent status changes to "completed", agent_completed event emitted
+**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+
+## Test: polling skips missing file
+**Purpose:** Verify ENOENT is handled gracefully
+**Input:** Register agent with outputFile pointing to non-existent path, call pollAgents()
+**Expected:** Agent remains "running", no error thrown
+**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+
+## Test: polling skips already completed agent
+**Purpose:** Verify no duplicate completion events
+**Input:** Register agent, complete it manually, call pollAgents()
+**Expected:** Emitter called only once (from manual complete), not again from poll
+**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+
+## Test: stopPolling clears interval
+**Purpose:** Verify polling does not keep process alive
+**Input:** startPolling(), then stopPolling()
+**Expected:** pollTimer is null, no further poll cycles execute
+**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
