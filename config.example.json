@@ -10,7 +10,8 @@
       "provider": "ollama",
       "model": "nomic-embed-text",
       "baseUrl": "http://127.0.0.1:11434/v1"
-    }
+    },
+    "extraPaths": []
   },
   "identity": {
     "dir": "~/.homaruscc/identity"
@@ -20,10 +21,35 @@
     "enabled": true
   },
   "timers": {
-    "enabled": true
+    "enabled": true,
+    "defaults": [
+      {
+        "name": "morning-briefing",
+        "type": "cron",
+        "schedule": "0 9 * * *",
+        "timezone": "America/Chicago",
+        "prompt": "Good morning routine: 1) Search memory for user patterns and preferences. 2) Check recent events for anything unresolved. 3) Send a Telegram message with: a greeting, any pending items, and proactive suggestions."
+      },
+      {
+        "name": "evening-reflection",
+        "type": "cron",
+        "schedule": "0 21 * * *",
+        "timezone": "America/Chicago",
+        "prompt": "Daily reflection: 1) Review today's interactions. 2) Identify new user preferences, corrections, or patterns. 3) Store insights in memory. 4) Send a brief summary if there's something actionable for tomorrow."
+      },
+      {
+        "name": "nightly-dream",
+        "type": "cron",
+        "schedule": "0 3 * * *",
+        "timezone": "America/Chicago",
+        "prompt": "Dream cycle: 1) Memory consolidation — search recent topics, note what matters. 2) Associative dreaming — search diverse queries, force-connect results into impressionistic fragments. 3) Overfitting prevention — challenge one established belief. Store output as dreams/YYYY-MM-DD.md. Send a brief dream digest via Telegram."
+      }
+    ]
   },
   "browser": {
     "enabled": false,
-    "headless": true
+    "headless": true,
+    "viewport": { "width": 1280, "height": 720 },
+    "timeout": 30000
   }
 }

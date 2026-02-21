@@ -55,11 +55,11 @@ mkdir -p ~/.homaruscc
 cp config.example.json ~/.homaruscc/config.json
 ```
 
-Edit `~/.homaruscc/config.json` with your settings. Tokens use `${ENV_VAR}` syntax so secrets stay in your `.env` file:
+Edit `~/.homaruscc/config.json` with your settings (see `config.example.json` for all options including default timers and browser config). Tokens use `${ENV_VAR}` syntax so secrets stay in your `.env` file:
 
 ```bash
-# ~/.homaruscc/.env
-TELEGRAM_BOT_TOKEN=your-bot-token-here
+cp .env.example ~/.homaruscc/.env
+# Edit ~/.homaruscc/.env with your actual tokens
 ```
 
 ### 3. Set up identity
@@ -68,11 +68,10 @@ HomarUScc loads identity files from `~/.homaruscc/identity/` to shape your assis
 
 ```bash
 mkdir -p ~/.homaruscc/identity
-cp identity.example/soul.md ~/.homaruscc/identity/soul.md
-cp identity.example/user.md ~/.homaruscc/identity/user.md
+cp identity.example/*.md ~/.homaruscc/identity/
 ```
 
-Edit `soul.md` (agent personality) and `user.md` (what the agent knows about you) to make it yours. The agent creates additional files over time:
+Edit `soul.md` (agent personality) and `user.md` (what the agent knows about you) to make it yours. The starter kit includes templates for all five identity files. The agent updates them over time:
 
 | File | Purpose | Who writes it |
 |------|---------|---------------|
