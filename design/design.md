@@ -70,6 +70,17 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-agent-dispatch.md → `src/agent-registry.ts`, `src/dashboard-server.ts`
 - [x] seq-agent-poll.md → `src/agent-registry.ts`
 
+### On Birth (First-Run Wizard)
+- [ ] crc-Cli.md → `src/cli.ts`
+- [ ] crc-Wizard.md → `src/wizard.ts`
+- [ ] crc-Scaffolder.md → `src/scaffolder.ts`
+- [ ] crc-ClaudeCodeRegistrar.md → `src/claude-code-registrar.ts`
+- [ ] crc-NpmPackage.md → `package.json`, `.npmignore`
+- [ ] seq-first-run.md → `src/cli.ts`, `src/wizard.ts`, `src/scaffolder.ts`, `src/claude-code-registrar.ts`
+- [ ] seq-normal-start.md → `src/cli.ts`
+- [ ] test-Scaffolder.md → `src/__tests__/scaffolder.test.ts`
+- [ ] test-ClaudeCodeRegistrar.md → `src/__tests__/claude-code-registrar.test.ts`
+
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`
 - [x] test-Config.md → `src/config.ts`
@@ -94,3 +105,9 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] O6: dashboard/src/main.tsx has no traceability comment (React entry point, trivial — acceptable)
 
 - [ ] O7: Hook configuration instructions not yet added to README or setup docs (R81)
+- [ ] O8: No test design for Wizard (interactive prompts are hard to unit test -- consider extracting prompt logic from I/O)
+- [ ] O9: No test design for Cli (entry point logic is minimal -- config existence check + delegation)
+- [ ] O10: Wizard does not handle SIGINT gracefully mid-prompt (user Ctrl+C during wizard)
+- [ ] O11: No Windows support for openBrowser (only macOS `open` and Linux `xdg-open` covered by R181)
+- [ ] O12: ClaudeCodeRegistrar assumes JSON structure of settings files -- may need to handle edge cases (malformed JSON, read-only permissions)
+- [ ] O13: npm publish workflow not documented (version bump, npm login, publish command sequence)

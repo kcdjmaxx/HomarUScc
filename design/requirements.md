@@ -241,3 +241,29 @@
 - **R160:** (inferred) `cleanup(id)` clears any per-agent polling state
 - **R161:** (inferred) File read errors (ENOENT, permission) are logged and skipped, not thrown
 - **R162:** (inferred) Agents are only completed once — skip agents already completed/failed
+
+## Feature: On Birth (First-Run Wizard)
+**Source:** specs/on-birth/on-birth.md
+
+- **R163:** Package.json includes a `bin` entry so `npx homaruscc` invokes the CLI entry point
+- **R164:** CLI entry point detects whether `~/.homaruscc/config.json` exists
+- **R165:** If config exists, start normally by spawning the MCP proxy
+- **R166:** If no config exists, run the On Birth wizard
+- **R167:** Wizard prompts for agent name with option to skip (agent self-names on first run)
+- **R168:** Wizard prompts for channel selection: Telegram (optional) and Dashboard (always enabled)
+- **R169:** Wizard offers two identity paths: Alignment Generator (opens browser URL, user pastes output) or template (copies identity.example files)
+- **R170:** Wizard collects user context for user.md: name and freeform "what should the agent know about you"
+- **R171:** Wizard collects TELEGRAM_BOT_TOKEN if Telegram channel was selected
+- **R172:** After wizard, create `~/.homaruscc/` directory structure including identity/, journal/, memory/, transcripts/
+- **R173:** After wizard, write `~/.homaruscc/config.json` from collected answers, deriving from config.example.json
+- **R174:** After wizard, write `~/.homaruscc/.env` with collected tokens
+- **R175:** After wizard, write identity files (soul.md, user.md, state.md, preferences.md, disagreements.md) to `~/.homaruscc/identity/`
+- **R176:** Auto-detect Claude Code settings file location and offer to register HomarUScc as an MCP server
+- **R177:** Package.json `files` array includes all necessary files for npm publish (dist/, bin/, identity.example/, config.example.json, .env.example)
+- **R178:** Create `.npmignore` to exclude dev files, specs, design, tests, dashboard source
+- **R179:** (inferred) Wizard uses a lightweight prompt library or Node.js built-in readline -- minimal dependencies
+- **R180:** (inferred) Wizard is a separate module from the MCP server, imported only when needed
+- **R181:** (inferred) If user selects Alignment Generator path, open URL in default browser via `open` (macOS) / `xdg-open` (Linux)
+- **R182:** (inferred) Config.json written by wizard disables channels not selected (e.g., omits telegram section if not chosen)
+- **R183:** (inferred) Wizard prints a summary of created files and next steps on completion
+- **R184:** (inferred) Identity template path copies all 5 files from identity.example/ and interpolates agent name and user name where applicable
