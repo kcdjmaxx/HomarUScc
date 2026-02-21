@@ -1,0 +1,29 @@
+# Mini-spec artifacts (kept on GitHub for contributors, excluded from npm)
+refs/
+specs/
+design/
+
+# Examples and templates (users get these from GitHub, not npm)
+identity.example/
+*.example.md
+*.example.json
+
+# Development files
+src/
+dashboard/
+*.ts
+tsconfig.json
+.claude/
+.github/
+
+# Documentation extras
+dreams.md
+CLAUDE.md
+
+# Build/dev tooling
+node_modules/
+.env*
+*.db
+*.sqlite
+*.log
+.DS_Store
