@@ -47,6 +47,9 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-CompactionManager.md → `src/compaction-manager.ts`
 - [x] crc-TranscriptLogger.md → `src/transcript-logger.ts`
 
+- [x] crc-DreamScoring.md → `src/memory-index.ts`
+- [x] crc-DreamCyclePrompt.md → `.claude/skills/homaruscc`
+
 ### Sequences
 - [x] seq-startup.md → `src/homaruscc.ts`, `src/mcp-server.ts`
 - [x] seq-event-flow.md → `src/homaruscc.ts`, `src/event-bus.ts`, `src/event-queue.ts`, `src/channel-manager.ts`, `src/mcp-server.ts`
@@ -57,6 +60,8 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-compaction-flush.md → `src/compaction-manager.ts`, `src/dashboard-server.ts`
 - [x] seq-transcript-capture.md → `src/transcript-logger.ts`, `src/homaruscc.ts`, `src/mcp-tools.ts`
 
+- [x] seq-dream-cycle.md → `src/memory-index.ts`
+
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`
 - [x] test-Config.md → `src/config.ts`
@@ -65,6 +70,8 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] test-TemporalDecay.md → `src/memory-index.ts`
 - [x] test-MMR.md → `src/memory-index.ts`
 - [x] test-TranscriptLogger.md → `src/transcript-logger.ts`
+
+- [x] test-DreamScoring.md → `src/memory-index.ts`
 
 ## Gaps
 

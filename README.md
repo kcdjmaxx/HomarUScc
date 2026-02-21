@@ -4,7 +4,7 @@
 
 Most MCP servers add capabilities. HomarUScc adds _continuity_. It gives the agent persistent identity (who it is across sessions), evolving memory (what it's learned), and zero-token idle (it costs nothing when nobody's talking to it). The agent wakes on events, reasons, responds, reflects, and goes back to sleep.
 
-The result is an agent that remembers yesterday's conversation, carries forward its own preferences and opinions, writes a daily journal, and can modify its own personality file as it develops. Not a chatbot that resets every session — a persistent presence that grows over time.
+The result is an agent that remembers yesterday's conversation, carries forward its own preferences and opinions, writes a daily journal, dreams overnight, and can modify its own personality file as it develops. Not a chatbot that resets every session — a persistent presence that grows over time.
 
 Built with [mini-spec](https://github.com/zot/mini-spec).
 
@@ -19,7 +19,7 @@ Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
                                     +-- Telegram (long-polling adapter)
                                     +-- Dashboard (Express + WebSocket SPA)
                                     +-- Timer service (cron / interval / one-shot)
-                                    +-- Memory index (SQLite + vector + FTS + auto-flush + temporal decay + MMR + transcripts)
+                                    +-- Memory index (SQLite + vector + FTS + decay + MMR + dream scoring)
                                     +-- Browser automation (Playwright)
                                     +-- Identity manager (soul.md / user.md / state.md + journal)
                                     +-- Skill plugins (hot-loadable)
@@ -83,6 +83,18 @@ Edit `soul.md` (agent personality) and `user.md` (what the agent knows about you
 | `disagreements.md` | Times the agent pushed back or had a different opinion | Agent (when it happens) |
 
 Journal entries are written to `~/.homaruscc/journal/YYYY-MM-DD.md` during daily reflection.
+
+### Dream Cycle
+
+At 3am each night, the agent runs a three-phase dream cycle inspired by [neuroscience research on sleep functions](dreams.md):
+
+1. **Memory consolidation** — reviews recent memories, identifies what's important vs noise
+2. **Associative dreaming** — pulls random memories from different topics/periods and force-connects them, producing fuzzy, impressionistic fragments
+3. **Overfitting prevention** — challenges an established preference or belief to test its flexibility
+
+Dream output is deliberately stream-of-consciousness and stored in the unified memory index under `dreams/` with 0.5x weight (always ranks below waking memories) and a 7-day decay half-life (fades quickly). When dream fragments surface during waking interactions, the agent notes the origin explicitly.
+
+A morning digest summarizes interesting dream fragments via Telegram.
 
 ### 4. Add to Claude Code
 
@@ -195,7 +207,7 @@ Key source files:
 | `src/telegram-adapter.ts` | Telegram long-polling adapter |
 | `src/dashboard-server.ts` | Express + WebSocket dashboard server |
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
-| `src/memory-index.ts` | SQLite + sqlite-vec hybrid search |
+| `src/memory-index.ts` | SQLite + sqlite-vec hybrid search with dream-aware scoring |
 | `src/compaction-manager.ts` | Auto-flush memory before context compaction |
 | `src/transcript-logger.ts` | Session transcript capture and indexing |
 | `src/identity-manager.ts` | Identity loader (soul.md, user.md, state.md) |

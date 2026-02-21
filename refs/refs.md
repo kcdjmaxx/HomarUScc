@@ -48,6 +48,14 @@
 - **Status:** active
 - **Summary:** OpenClaw's auto-flush before compaction — two-threshold token counting with silent agentic turn for memory persistence.
 
+## ref-dreams-brainstorm
+- **Source:** local:dreams.md
+- **Type:** local
+- **Fetched:** 2026-02-20
+- **Requirements:** R109, R110, R111, R112, R113, R114, R115, R116, R117, R118, R119, R120, R121, R122, R123
+- **Status:** active
+- **Summary:** Deep research on neuroscience of dreaming mapped to agent architecture. 8 academic sources. Includes questionnaire with Max's finalized answers: unified storage (0.5x weight), 3 MVP phases (consolidation + associative + overfitting), 7-day decay, 3am schedule, high fuzziness, morning digest, explicit waking refs.
+
 ## ref-playwright
 - **Source:** https://playwright.dev/docs/api/class-browsertype
 - **Type:** web

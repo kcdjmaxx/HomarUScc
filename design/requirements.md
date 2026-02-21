@@ -167,3 +167,22 @@
 - **R106:** (inferred) Create transcript directory on first flush if it doesn't exist
 - **R107:** (inferred) Flush failures log error and retain buffer for retry
 - **R108:** (inferred) Trigger transcript flush during pre-compaction routine
+
+## Feature: Dream System
+**Source:** specs/dreams.md
+
+- **R109:** Schedule a nightly dream cycle at 3am CST via cron timer (`0 3 * * *`, timezone `America/Chicago`)
+- **R110:** Dream cycle executes three phases in sequence: memory consolidation, associative dreaming, overfitting prevention
+- **R111:** Memory consolidation phase pulls recent memories (24-48h) and evaluates their importance, reinforcing significant ones
+- **R112:** Associative dreaming phase pulls 3-5 random memories from different time periods/topics and force-connects them
+- **R113:** Overfitting prevention phase pulls a random established preference or pattern and challenges its validity
+- **R114:** Dream output is stored under `dreams/` key prefix in the unified memory index (e.g., `dreams/2026-02-21.md`)
+- **R115:** Dream-origin memories receive a configurable base weight multiplier (default 0.5x) applied during search scoring
+- **R116:** Dream-origin memories decay with a configurable half-life (default 7 days) separate from the global decay half-life
+- **R117:** Dream path patterns are configurable via `memory.dreams.patterns` (default `["dreams/"]`)
+- **R118:** Dream output uses high-fuzziness style: stream-of-consciousness, impressionistic, no definitive claims
+- **R119:** After the dream cycle completes, send a dream digest summary via Telegram to the configured chat
+- **R120:** During waking interactions, when a search result path matches a dream pattern, the agent should explicitly note the dream origin
+- **R121:** (inferred) Dream cycle token budget targets ~2000 tokens (3-4 prompts across phases)
+- **R122:** (inferred) Each night's dream is independent — no continuity from previous nights
+- **R123:** (inferred) Dream config section: `memory.dreams.halfLifeDays`, `memory.dreams.baseWeight`, `memory.dreams.patterns`

@@ -166,6 +166,9 @@ export class HomarUScc {
     if (memoryConfig?.search) {
       this.memoryIndex.setSearchConfig(memoryConfig.search);
     }
+    if (memoryConfig?.dreams) {
+      this.memoryIndex.setDreamConfig(memoryConfig.dreams);
+    }
     if (memoryConfig?.embedding) {
       const embeddingProvider = createEmbeddingProvider({
         provider: memoryConfig.embedding.provider,

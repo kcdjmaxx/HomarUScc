@@ -31,7 +31,9 @@ interface Chunk {
 }
 
 // R82-R89: Temporal decay on search results
+// R115-R117, R123: Dream-aware scoring
 const DEFAULT_EVERGREEN_PATTERNS = ["MEMORY.md", "SOUL.md", "USER.md"];
+const DEFAULT_DREAM_PATTERNS = ["dreams/"];
 const MS_PER_DAY = 86_400_000;
 
 export class MemoryIndex {
@@ -44,6 +46,9 @@ export class MemoryIndex {
   private decayEnabled: boolean;
   private decayHalfLifeDays: number;
   private evergreenPatterns: string[];
+  private dreamPatterns: string[];
+  private dreamHalfLifeDays: number;
+  private dreamBaseWeight: number;
   private mmrEnabled: boolean;
   private mmrLambda: number;
   private indexedPaths: string[] = [];
@@ -59,6 +64,9 @@ export class MemoryIndex {
     decayEnabled?: boolean;
     decayHalfLifeDays?: number;
     evergreenPatterns?: string[];
+    dreamPatterns?: string[];
+    dreamHalfLifeDays?: number;
+    dreamBaseWeight?: number;
     mmrEnabled?: boolean;
     mmrLambda?: number;
   }) {
@@ -70,6 +78,9 @@ export class MemoryIndex {
     this.decayEnabled = options?.decayEnabled ?? true;
     this.decayHalfLifeDays = options?.decayHalfLifeDays ?? 30;
     this.evergreenPatterns = options?.evergreenPatterns ?? DEFAULT_EVERGREEN_PATTERNS;
+    this.dreamPatterns = options?.dreamPatterns ?? DEFAULT_DREAM_PATTERNS;
+    this.dreamHalfLifeDays = options?.dreamHalfLifeDays ?? 7;
+    this.dreamBaseWeight = options?.dreamBaseWeight ?? 0.5;
     this.mmrEnabled = options?.mmrEnabled ?? true;
     this.mmrLambda = options?.mmrLambda ?? 0.7;
   }
@@ -83,6 +94,13 @@ export class MemoryIndex {
     if (config.enabled !== undefined) this.decayEnabled = config.enabled;
     if (config.halfLifeDays !== undefined) this.decayHalfLifeDays = config.halfLifeDays;
     if (config.evergreenPatterns !== undefined) this.evergreenPatterns = config.evergreenPatterns;
+  }
+
+  // CRC: crc-DreamScoring.md | R115, R116, R117, R123
+  setDreamConfig(config: NonNullable<MemoryConfig["dreams"]>): void {
+    if (config.halfLifeDays !== undefined) this.dreamHalfLifeDays = config.halfLifeDays;
+    if (config.baseWeight !== undefined) this.dreamBaseWeight = config.baseWeight;
+    if (config.patterns !== undefined) this.dreamPatterns = config.patterns;
   }
 
   // CRC: crc-MemoryIndex.md | R92, R93
@@ -292,6 +310,13 @@ export class MemoryIndex {
       }
     }
 
+    // CRC: crc-DreamScoring.md | R115
+    for (const result of results.values()) {
+      if (this.isDreamContent(result.path)) {
+        result.score *= this.dreamBaseWeight;
+      }
+    }
+
     const candidates = [...results.entries()]
       .filter(([, r]) => r.score >= minScore)
       .sort(([, a], [, b]) => b.score - a.score);
@@ -442,17 +467,23 @@ export class MemoryIndex {
     return union > 0 ? intersection / union : 0;
   }
 
-  // CRC: crc-MemoryIndex.md | R82, R83
+  // CRC: crc-MemoryIndex.md | R82, R83 | crc-DreamScoring.md | R116
   private computeDecay(updatedAt: number, path: string): number {
     if (!updatedAt || this.isEvergreen(path)) return 1.0;
     const ageDays = (Date.now() - updatedAt) / MS_PER_DAY;
     if (ageDays <= 0) return 1.0;
-    return Math.pow(0.5, ageDays / this.decayHalfLifeDays);
+    const halfLife = this.isDreamContent(path) ? this.dreamHalfLifeDays : this.decayHalfLifeDays;
+    return Math.pow(0.5, ageDays / halfLife);
   }
 
   // CRC: crc-MemoryIndex.md | R84, R85, R88
   private isEvergreen(path: string): boolean {
     return this.evergreenPatterns.some((pattern) => path.endsWith(pattern));
+  }
+
+  // CRC: crc-DreamScoring.md | R117
+  private isDreamContent(path: string): boolean {
+    return this.dreamPatterns.some((pattern) => path.includes(pattern));
   }
 
   private chunkContent(content: string, path: string): Chunk[] {

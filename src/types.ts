@@ -163,6 +163,11 @@ export interface MemoryConfig {
     directory?: string;
     flushIntervalMs?: number;
   };
+  dreams?: {
+    halfLifeDays?: number;
+    baseWeight?: number;
+    patterns?: string[];
+  };
   extraPaths?: string[];
 }
 
