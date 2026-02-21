@@ -157,6 +157,10 @@ export class DashboardServer {
       res.type("text/markdown").send(this.loop.getIdentityManager().getUser() || "(not configured)");
     });
 
+    this.app.get("/api/identity/state", (_req, res) => {
+      res.type("text/markdown").send(this.loop.getIdentityManager().getAgentState() || "(no state file)");
+    });
+
     // Long-poll endpoint — blocks until events arrive or timeout
     // Returns identity context alongside events so Claude re-grounds on every wake
     this.app.get("/api/wait", async (req, res) => {
@@ -171,6 +175,7 @@ export class DashboardServer {
             identity: {
               soul: identity.getSoul(),
               user: identity.getUser(),
+              state: identity.getAgentState(),
             },
             events,
           });

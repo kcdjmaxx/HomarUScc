@@ -1,8 +1,10 @@
 # HomarUScc
 
-**HomarUS for Claude Code** — an MCP server that gives Claude Code a body: messaging (Telegram), a web dashboard, persistent memory, scheduled timers, browser automation, and local tools.
+**An MCP server that gives Claude Code a body** — messaging, memory, identity, timers, browser automation, and tools. Claude Code is the brain. HomarUScc is the nervous system.
 
-Claude Code is the brain. HomarUScc is the nervous system.
+Most MCP servers add capabilities. HomarUScc adds _continuity_. It gives the agent persistent identity (who it is across sessions), evolving memory (what it's learned), and zero-token idle (it costs nothing when nobody's talking to it). The agent wakes on events, reasons, responds, reflects, and goes back to sleep.
+
+The result is an agent that remembers yesterday's conversation, carries forward its own preferences and opinions, writes a daily journal, and can modify its own personality file as it develops. Not a chatbot that resets every session — a persistent presence that grows over time.
 
 Built with [mini-spec](https://github.com/zot/mini-spec).
 
@@ -19,7 +21,7 @@ Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
                                     +-- Timer service (cron / interval / one-shot)
                                     +-- Memory index (SQLite + vector + FTS + auto-flush + temporal decay + MMR + transcripts)
                                     +-- Browser automation (Playwright)
-                                    +-- Identity manager (soul.md / user.md)
+                                    +-- Identity manager (soul.md / user.md / state.md + journal)
                                     +-- Skill plugins (hot-loadable)
                                     +-- Tool registry (bash, fs, git, web, memory)
 ```
@@ -62,7 +64,7 @@ TELEGRAM_BOT_TOKEN=your-bot-token-here
 
 ### 3. Set up identity
 
-HomarUScc loads `soul.md` and `user.md` from your identity directory to shape your assistant's personality and what it knows about you.
+HomarUScc loads identity files from `~/.homaruscc/identity/` to shape your assistant's personality, what it knows about you, and its evolving self-knowledge.
 
 ```bash
 mkdir -p ~/.homaruscc/identity
@@ -70,7 +72,17 @@ cp identity.example/soul.md ~/.homaruscc/identity/soul.md
 cp identity.example/user.md ~/.homaruscc/identity/user.md
 ```
 
-Edit these to make it yours.
+Edit `soul.md` (agent personality) and `user.md` (what the agent knows about you) to make it yours. The agent creates additional files over time:
+
+| File | Purpose | Who writes it |
+|------|---------|---------------|
+| `soul.md` | Core identity, values, self-evolution | Human (core) + Agent (below Self-Evolution line) |
+| `user.md` | User context and preferences | Human |
+| `state.md` | Session mood, unresolved items, emotional continuity | Agent (end of each session) |
+| `preferences.md` | Emergent preferences discovered through experience | Agent (during reflection) |
+| `disagreements.md` | Times the agent pushed back or had a different opinion | Agent (when it happens) |
+
+Journal entries are written to `~/.homaruscc/journal/YYYY-MM-DD.md` during daily reflection.
 
 ### 4. Add to Claude Code
 
@@ -121,6 +133,7 @@ Restart Claude Code. HomarUScc's tools will appear automatically. The proxy auto
 |-----|-------------|
 | `identity://soul` | Soul.md content |
 | `identity://user` | User.md content |
+| `identity://state` | State.md — agent mood, session continuity |
 | `config://current` | Current config (secrets redacted) |
 | `events://recent` | Recent event history |
 
@@ -152,6 +165,8 @@ HomarUScc creates runtime data that's gitignored and stays local:
 | `user/preferences/` | Your stated preferences |
 | `system/` | System-level learned knowledge |
 | `~/.homaruscc/memory/` | Vector + FTS search index (SQLite) |
+| `~/.homaruscc/identity/` | Agent identity files (soul, user, state, preferences, disagreements) |
+| `~/.homaruscc/journal/` | Daily reflection journal entries (indexed by memory system) |
 | `~/.homaruscc/browser-data/` | Persistent browser sessions |
 
 ## Event Loop
@@ -183,7 +198,7 @@ Key source files:
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search |
 | `src/compaction-manager.ts` | Auto-flush memory before context compaction |
 | `src/transcript-logger.ts` | Session transcript capture and indexing |
-| `src/identity-manager.ts` | soul.md / user.md / overlay loader |
+| `src/identity-manager.ts` | Identity loader (soul.md, user.md, state.md) |
 | `src/timer-service.ts` | Cron, interval, and one-shot timers |
 | `src/browser-service.ts` | Playwright browser automation |
 | `src/skill-manager.ts` | Hot-loadable skill plugins |

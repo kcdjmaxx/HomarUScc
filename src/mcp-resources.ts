@@ -31,6 +31,15 @@ export function createMcpResources(loop: HomarUScc): McpResourceDef[] {
       },
     },
     {
+      uri: "identity://state",
+      name: "Agent State",
+      description: "Current state.md — agent mood, recent session context, emotional continuity",
+      mimeType: "text/markdown",
+      async handler() {
+        return loop.getIdentityManager().getAgentState() || "(no state.md — first session)";
+      },
+    },
+    {
       uri: "config://current",
       name: "Current Config",
       description: "Current configuration (secrets redacted)",

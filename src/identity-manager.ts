@@ -13,6 +13,7 @@ export interface PromptBuildOptions {
 export class IdentityManager {
   private soulContent = "";
   private userContent = "";
+  private stateContent = "";
   private overlays = new Map<string, string>();
   private workspaceFiles = new Map<string, string>();
   private identityDir: string;
@@ -28,11 +29,13 @@ export class IdentityManager {
   load(): void {
     this.soulContent = this.readFile(resolve(this.identityDir, "soul.md"));
     this.userContent = this.readFile(resolve(this.identityDir, "user.md"));
+    this.stateContent = this.readFile(resolve(this.identityDir, "state.md"));
     this.loadOverlays();
     this.loadWorkspaceFiles();
     this.logger.info("Identity loaded", {
       hasSoul: this.soulContent.length > 0,
       hasUser: this.userContent.length > 0,
+      hasState: this.stateContent.length > 0,
       overlays: this.overlays.size,
       workspaceFiles: this.workspaceFiles.size,
     });
@@ -49,6 +52,7 @@ export class IdentityManager {
 
     if (this.soulContent) parts.push(this.soulContent);
     if (this.userContent) parts.push(this.userContent);
+    if (this.stateContent) parts.push(this.stateContent);
 
     if (options.channel) {
       const overlay = this.overlays.get(options.channel);
@@ -75,6 +79,10 @@ export class IdentityManager {
 
   getUser(): string {
     return this.userContent;
+  }
+
+  getAgentState(): string {
+    return this.stateContent;
   }
 
   getOverlay(name: string): string | undefined {
