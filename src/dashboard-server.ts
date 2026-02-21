@@ -205,6 +205,54 @@ export class DashboardServer {
       res.type("text/plain").send(context);
     });
 
+    // --- Session Checkpoint endpoints (R126, R127, R130) ---
+    this.app.post("/api/checkpoint", express.json(), (req, res) => {
+      this.loop.getSessionCheckpoint().update(req.body);
+      res.json({ ok: true });
+    });
+
+    this.app.get("/api/checkpoint", (_req, res) => {
+      const data = this.loop.getSessionCheckpoint().getData() ?? this.loop.getSessionCheckpoint().load();
+      res.json(data ?? {});
+    });
+
+    this.app.delete("/api/checkpoint", (_req, res) => {
+      this.loop.getSessionCheckpoint().clear();
+      res.json({ ok: true });
+    });
+
+    // --- Agent Registry endpoints (R137, R138, R139) ---
+    this.app.post("/api/agents", express.json(), (req, res) => {
+      const { id, description, outputFile } = req.body as { id: string; description: string; outputFile?: string };
+      const ok = this.loop.getAgentRegistry().register(id, description, outputFile);
+      if (ok) {
+        res.json({ ok: true });
+      } else {
+        res.status(429).json({ error: "Agent registry at capacity" });
+      }
+    });
+
+    this.app.get("/api/agents", (_req, res) => {
+      res.json(this.loop.getAgentRegistry().getAll());
+    });
+
+    this.app.patch("/api/agents/:id", express.json(), (req, res) => {
+      const { id } = req.params;
+      const { status, result, error } = req.body as { status: string; result?: string; error?: string };
+      const registry = this.loop.getAgentRegistry();
+      if (status === "completed" && result) {
+        registry.complete(id, result);
+      } else if (status === "failed" && error) {
+        registry.fail(id, error);
+      }
+      res.json({ ok: true });
+    });
+
+    this.app.delete("/api/agents/:id", (req, res) => {
+      this.loop.getAgentRegistry().cleanup(req.params.id);
+      res.json({ ok: true });
+    });
+
     this.app.get("/api/tool-list", (_req, res) => {
       res.json(this.mcpTools.map((t) => ({
         name: t.name,

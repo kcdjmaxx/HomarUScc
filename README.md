@@ -22,6 +22,8 @@ Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
                                     +-- Memory index (SQLite + vector + FTS + decay + MMR + dream scoring)
                                     +-- Browser automation (Playwright)
                                     +-- Identity manager (soul.md / user.md / state.md + journal)
+                                    +-- Session checkpoint (compaction resilience)
+                                    +-- Agent registry (background task dispatch)
                                     +-- Skill plugins (hot-loadable)
                                     +-- Tool registry (bash, fs, git, web, memory)
 ```
@@ -219,6 +221,28 @@ The `bin/event-loop` script provides a zero-token idle loop. It long-polls the d
 bash homaruscc/bin/event-loop
 ```
 
+## Compaction Resilience
+
+Claude Code compresses conversation history when the context window fills up. Without mitigation, the post-compaction agent loses track of what it was doing. HomarUScc handles this with two mechanisms:
+
+**Session checkpoint** — Before compaction, the agent saves its current task context (topic, recent decisions, in-progress work, modified files) to `~/.homaruscc/checkpoint.json` via `POST /api/checkpoint`. After compaction, the post-compact context injection includes this checkpoint so the new instance knows exactly where things left off. The checkpoint is cleared at session end.
+
+**Delivery watermark** — The server tracks the timestamp of the last event delivered to Claude Code. After compaction, the event loop resumes from the watermark instead of replaying old events. This prevents the "bad loop" problem where a post-compaction agent re-handles messages it already responded to.
+
+Both are wired into the existing `PreCompact`/`PostCompact` Claude Code hooks that call `/api/pre-compact` and `/api/post-compact`.
+
+## Agent Dispatch
+
+For tasks that would consume significant context (research, multi-file processing, mini-spec workflows), the agent can dispatch work to background agents instead of doing it inline:
+
+1. Register the agent with `POST /api/agents` (returns 429 if at max capacity)
+2. Spawn a background Task agent via Claude Code's Task tool
+3. Return to the event loop immediately — stay responsive to messages
+4. When the agent completes, an `agent_completed` event flows through the event system
+5. Summarize results and send to the user
+
+Max concurrent agents is configurable via `agents.maxConcurrent` in config (default 3). The agent registry tracks running/completed/failed agents and includes them in post-compaction context so background work isn't lost across compaction boundaries.
+
 ## Architecture
 
 HomarUScc is a fork of HomarUS with the agent loop, model router, and HTTP API removed. Claude Code handles all reasoning; HomarUScc just provides the I/O layer.
@@ -239,6 +263,8 @@ Key source files:
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search with dream-aware scoring |
 | `src/compaction-manager.ts` | Auto-flush memory before context compaction |
+| `src/session-checkpoint.ts` | Save/restore task context across compaction |
+| `src/agent-registry.ts` | Track background agents with capacity limits |
 | `src/transcript-logger.ts` | Session transcript capture and indexing |
 | `src/identity-manager.ts` | Identity loader (soul.md, user.md, state.md) |
 | `src/timer-service.ts` | Cron, interval, and one-shot timers |

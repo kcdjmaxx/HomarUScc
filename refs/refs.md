@@ -56,6 +56,14 @@
 - **Status:** active
 - **Summary:** Deep research on neuroscience of dreaming mapped to agent architecture. 8 academic sources. Includes questionnaire with Max's finalized answers: unified storage (0.5x weight), 3 MVP phases (consolidation + associative + overfitting), 7-day decay, 3am schedule, high fuzziness, morning digest, explicit waking refs.
 
+## ref-claude-code-task-tool
+- **Source:** internal (Claude Code tool documentation)
+- **Type:** local
+- **Fetched:** 2026-02-22
+- **Requirements:** R133, R135, R143, R144
+- **Status:** active
+- **Summary:** Claude Code Task tool for spawning background subagents with isolated context windows. Supports foreground/background execution, multiple agent types, configurable models.
+
 ## ref-playwright
 - **Source:** https://playwright.dev/docs/api/class-browsertype
 - **Type:** web

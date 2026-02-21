@@ -186,3 +186,36 @@
 - **R121:** (inferred) Dream cycle token budget targets ~2000 tokens (3-4 prompts across phases)
 - **R122:** (inferred) Each night's dream is independent — no continuity from previous nights
 - **R123:** (inferred) Dream config section: `memory.dreams.halfLifeDays`, `memory.dreams.baseWeight`, `memory.dreams.patterns`
+
+## Feature: Session Checkpoint
+**Source:** specs/session-checkpoint.md
+
+- **R124:** Backend maintains a session checkpoint file at `~/.homaruscc/checkpoint.json`
+- **R125:** Checkpoint contains: currentTopic, recentDecisions (max 10), inProgressTask, recentMessages (last 5 summarized), modifiedFiles, timestamp
+- **R126:** `POST /api/checkpoint` endpoint accepts partial checkpoint updates (merge semantics)
+- **R127:** `GET /api/checkpoint` endpoint returns current checkpoint or empty object if none exists
+- **R128:** Pre-compact hook triggers a checkpoint save before compaction
+- **R129:** Post-compact hook includes checkpoint contents in its context re-injection text
+- **R130:** Checkpoint is cleared (deleted) on clean session end to prevent stale state on next startup
+- **R131:** (inferred) Skill prompt instructs Claude to update checkpoint after handling each significant event
+- **R132:** (inferred) Checkpoint updates are lightweight — only changed fields, merge with existing
+
+## Feature: Agent Dispatcher
+**Source:** specs/agent-dispatcher.md
+
+- **R133:** Main event loop dispatches heavy tasks to background Claude Code Task agents with isolated context windows
+- **R134:** Dispatch decision is made by Claude in the skill prompt: inline for quick responses, dispatch for heavy work
+- **R135:** Background agents are spawned via Task tool with `run_in_background: true`
+- **R136:** Backend maintains an in-memory agent registry tracking: id, description, status, startTime, outputFile
+- **R137:** `POST /api/agents` registers a new agent in the registry
+- **R138:** `GET /api/agents` returns all tracked agents with current status
+- **R139:** `PATCH /api/agents/:id` updates agent status (completed/failed) with result summary
+- **R140:** When an agent is marked completed, backend emits an `agent_completed` event into the event system
+- **R141:** Config section `agents.maxConcurrent` (default 3) limits concurrent background agents
+- **R142:** When max concurrency is reached, the skill prompt defers dispatch until a slot opens
+- **R143:** Spawned agents receive task context and relevant pre-fetched memory but NOT identity/soul files
+- **R144:** Spawned agents do NOT have direct access to Telegram/dashboard — results route through the main loop
+- **R145:** Main loop notifies Max via Telegram/dashboard when an agent completes with a result summary
+- **R146:** (inferred) Config section: `agents.maxConcurrent`, `agents.defaultModel`, `agents.defaultType`
+- **R147:** (inferred) Agent registry entries are cleaned up after results are delivered (no unbounded growth)
+- **R148:** (inferred) Skill prompt provides heuristics for inline vs dispatch decisions

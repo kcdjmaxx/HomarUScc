@@ -124,6 +124,13 @@ export interface ConfigData {
   identity: IdentityConfig;
   browser?: BrowserConfig;
   toolPolicies?: ToolPolicyConfig[];
+  agents?: AgentsConfig;
+}
+
+export interface AgentsConfig {
+  maxConcurrent?: number;
+  defaultModel?: string;
+  defaultType?: string;
 }
 
 export interface ChannelConfig {

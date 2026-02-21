@@ -46,6 +46,10 @@ export class CompactionManager {
       .map((e) => `[${e.type}] ${e.source}: ${JSON.stringify(e.payload).slice(0, 100)}`)
       .join("\n");
 
+    // R128: Save checkpoint before compaction
+    const checkpoint = this.loop.getSessionCheckpoint();
+    checkpoint.update({ modifiedFiles: [] }); // trigger timestamp update
+
     return [
       "IMPORTANT: Context compaction is about to occur. Save any important session state to memory NOW.",
       "Use the memory_store tool to persist anything valuable from this session that hasn't been saved yet.",
@@ -111,6 +115,22 @@ export class CompactionManager {
         const ts = new Date(e.timestamp).toISOString();
         const summary = JSON.stringify(e.payload).slice(0, 80);
         lines.push(`  [${ts}] ${e.type}/${e.source}: ${summary}`);
+      }
+    }
+
+    // R129: Include session checkpoint in post-compact context
+    const checkpoint = this.loop.getSessionCheckpoint();
+    const checkpointText = checkpoint.toContextString();
+    if (checkpointText) {
+      lines.push("", "--- Session Checkpoint (what you were doing before compaction) ---", checkpointText);
+    }
+
+    // Include active agents
+    const agents = this.loop.getAgentRegistry().getAll().filter(a => a.status === "running");
+    if (agents.length > 0) {
+      lines.push("", "Running background agents:");
+      for (const a of agents) {
+        lines.push(`  - ${a.id}: ${a.description} (started ${new Date(a.startTime).toISOString()})`);
       }
     }
 

@@ -15,6 +15,8 @@ import { BrowserService } from "./browser-service.js";
 import { createEmbeddingProvider } from "./embedding-provider.js";
 import { registerBuiltinTools } from "./tools/index.js";
 import { TranscriptLogger } from "./transcript-logger.js";
+import { SessionCheckpoint } from "./session-checkpoint.js";
+import { AgentRegistry } from "./agent-registry.js";
 
 export type LoopState = "starting" | "running" | "stopping" | "stopped";
 
@@ -36,6 +38,8 @@ export class HomarUScc {
   private timerService!: TimerService;
   private browserService?: BrowserService;
   private transcriptLogger?: TranscriptLogger;
+  private sessionCheckpoint!: SessionCheckpoint;
+  private agentRegistry!: AgentRegistry;
   private logger: Logger;
   private processInterval: ReturnType<typeof setInterval> | null = null;
   private eventHistory: Event[] = [];
@@ -99,6 +103,14 @@ export class HomarUScc {
 
   getBrowserService(): BrowserService | undefined {
     return this.browserService;
+  }
+
+  getSessionCheckpoint(): SessionCheckpoint {
+    return this.sessionCheckpoint;
+  }
+
+  getAgentRegistry(): AgentRegistry {
+    return this.agentRegistry;
   }
 
   // Set the MCP notification callback
@@ -229,6 +241,16 @@ export class HomarUScc {
       this.browserService = new BrowserService(this.logger, configData.browser);
       this.logger.info("Browser service enabled");
     }
+
+    // 4b. Session checkpoint
+    const checkpointPath = `${home}/.homaruscc/checkpoint.json`;
+    this.sessionCheckpoint = new SessionCheckpoint(this.logger, checkpointPath);
+    this.sessionCheckpoint.load();
+
+    // 4c. Agent registry
+    const maxConcurrent = configData.agents?.maxConcurrent ?? 3;
+    this.agentRegistry = new AgentRegistry(this.logger, maxConcurrent);
+    this.agentRegistry.setEmitter((e) => this.emit(e));
 
     // 5. Register built-in tools
     registerBuiltinTools(this.toolRegistry, this.memoryIndex, this.logger, this.browserService);
