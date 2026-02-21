@@ -41,6 +41,7 @@ export class HomarUScc {
   private eventHistory: Event[] = [];
   private maxEventHistory = 100;
   private eventWaiters: Set<{ resolve: (events: Event[]) => void; since: number }> = new Set();
+  private deliveryWatermark = 0; // timestamp of the last event delivered via waitForEvent/API
 
   // MCP notification callback — called when events need Claude Code's attention
   private notifyFn: ((event: Event) => void) | null = null;
@@ -119,21 +120,43 @@ export class HomarUScc {
     }
   }
 
-  waitForEvent(timeoutMs = 30000): Promise<Event[]> {
-    const now = Date.now();
-    // If there are already very recent events, return immediately
-    const recent = this.getEventsSince(now - 100);
-    if (recent.length > 0) return Promise.resolve(recent);
+  waitForEvent(timeoutMs = 30000, since?: number): Promise<Event[]> {
+    // Use explicit cursor if provided, otherwise use delivery watermark, otherwise now
+    const cursor = since ?? (this.deliveryWatermark || Date.now());
+    // If there are already events after the cursor, return immediately
+    const pending = this.getEventsSince(cursor);
+    if (pending.length > 0) {
+      this.advanceWatermark(pending);
+      return Promise.resolve(pending);
+    }
 
     // Otherwise block until emit() signals us or timeout
     return new Promise((resolve) => {
-      const waiter = { resolve, since: now };
+      const waiter = {
+        resolve: (events: Event[]) => {
+          this.advanceWatermark(events);
+          resolve(events);
+        },
+        since: cursor,
+      };
       this.eventWaiters.add(waiter);
       setTimeout(() => {
         this.eventWaiters.delete(waiter);
         resolve([]); // timeout returns empty — caller loops again
       }, Math.min(timeoutMs, 120000));
     });
+  }
+
+  private advanceWatermark(events: Event[]): void {
+    if (events.length === 0) return;
+    const maxTs = Math.max(...events.map(e => e.timestamp));
+    if (maxTs > this.deliveryWatermark) {
+      this.deliveryWatermark = maxTs;
+    }
+  }
+
+  getDeliveryWatermark(): number {
+    return this.deliveryWatermark;
   }
 
   private getEventsSince(since: number): Event[] {

@@ -163,10 +163,13 @@ export class DashboardServer {
 
     // Long-poll endpoint — blocks until events arrive or timeout
     // Returns identity context alongside events so Claude re-grounds on every wake
+    // Maintains a server-side delivery watermark to prevent replaying old events after compaction
+    // Optional `since` query param (ms timestamp) overrides the watermark
     this.app.get("/api/wait", async (req, res) => {
       const timeout = Math.min(parseInt(req.query.timeout as string) || 30, 120) * 1000;
+      const sinceParam = req.query.since ? parseInt(req.query.since as string) : undefined;
       try {
-        const events = await this.loop.waitForEvent(timeout);
+        const events = await this.loop.waitForEvent(timeout, sinceParam);
         if (events.length === 0) {
           res.status(204).end();
         } else {
@@ -178,6 +181,7 @@ export class DashboardServer {
               state: identity.getAgentState(),
             },
             events,
+            cursor: this.loop.getDeliveryWatermark(),
           });
         }
       } catch {

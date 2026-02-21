@@ -2,6 +2,9 @@
 # Zero-token event loop for HomarUScc
 # Long-polls the dashboard HTTP API — blocks at OS level, zero Claude tokens while idle.
 # Returns to Claude only when real events arrive.
+#
+# The server maintains a delivery watermark — events already delivered via /api/wait
+# are never re-delivered. This survives context compaction without client-side state.
 
 set -euo pipefail
 
@@ -46,7 +49,7 @@ while true; do
       cat /tmp/homaruscc-wait-response.json
       echo ""
       echo "---"
-      echo "Event loop paused. Handle the events above, then restart: bash homaruscc/bin/event-loop"
+      echo "Event loop paused. Handle the events above, then restart: bash \"\$PWD/bin/event-loop\""
       exit 0
       ;;
     *)

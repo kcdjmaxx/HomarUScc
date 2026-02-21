@@ -1,9 +1,18 @@
 {
   "name": "homaruscc",
-  "version": "0.1.0",
-  "description": "HomarUS for Claude Code — MCP server with event loop, Telegram, dashboard, memory, and tools",
+  "version": "0.2.0",
+  "description": "MCP server that gives Claude Code a body — messaging, memory, identity, timers, browser automation, and dreams",
   "type": "module",
-  "main": "dist/mcp-server.js",
+  "main": "dist/mcp-proxy.js",
+  "files": [
+    "dist/",
+    "bin/",
+    "identity.example/",
+    "config.example.json",
+    ".env.example",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

@@ -80,8 +80,16 @@ export class CompactionManager {
     const timerNames = this.loop.getTimerService().getAll().map((t) => `${t.name} (${t.type})`);
     const memoryStats = this.loop.getMemoryIndex().getStats();
     const recentPaths = this.loop.getMemoryIndex().getRecentPaths(10);
+    const watermark = this.loop.getDeliveryWatermark();
+    const recentEvents = this.loop.getEventHistory().slice(-5);
 
-    const lines = ["Context was just compacted. Here is critical state:", ""];
+    const lines = [
+      "Context was just compacted. Here is critical state:",
+      "",
+      `Event delivery watermark: ${watermark} (${watermark ? new Date(watermark).toISOString() : "none"})`,
+      "The event loop will NOT replay events before this watermark — you are safe to restart it.",
+      "",
+    ];
 
     if (timerNames.length > 0) {
       lines.push(`Active timers: ${timerNames.join(", ")}`);
@@ -95,6 +103,15 @@ export class CompactionManager {
 
     if (this.loop.getIdentityManager().getSoul()) {
       lines.push("Identity: soul.md and user.md are loaded");
+    }
+
+    if (recentEvents.length > 0) {
+      lines.push("", "Last 5 events (already handled — do NOT re-process):");
+      for (const e of recentEvents) {
+        const ts = new Date(e.timestamp).toISOString();
+        const summary = JSON.stringify(e.payload).slice(0, 80);
+        lines.push(`  [${ts}] ${e.type}/${e.source}: ${summary}`);
+      }
     }
 
     return lines.join("\n");
