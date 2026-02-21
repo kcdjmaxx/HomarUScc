@@ -112,6 +112,20 @@ export class TimerService {
     return [...this.timers.values()].map((e) => e.config);
   }
 
+  registerDefaults(defaults: TimerConfig[]): void {
+    const existingNames = new Set([...this.timers.values()].map(e => e.config.name));
+    let added = 0;
+    for (const config of defaults) {
+      if (existingNames.has(config.name)) continue;
+      const id = config.id ?? uuid();
+      config.id = id;
+      this.timers.set(id, { config });
+      added++;
+      this.logger.info("Registered default timer", { name: config.name });
+    }
+    if (added > 0) this.saveTimers();
+  }
+
   start(): void {
     for (const [id] of this.timers) {
       this.startTimer(id);

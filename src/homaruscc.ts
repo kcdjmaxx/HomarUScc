@@ -233,6 +233,9 @@ export class HomarUScc {
     this.timerService = new TimerService(this.logger, timerStore);
     this.timerService.setEmitter((e) => this.emit(e));
     this.timerService.loadTimers();
+    if (configData.timers?.defaults) {
+      this.timerService.registerDefaults(configData.timers.defaults);
+    }
     if (configData.timers?.enabled !== false) {
       this.timerService.start();
     }

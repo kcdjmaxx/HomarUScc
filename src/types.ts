@@ -183,6 +183,13 @@ export interface DashboardConfig {
 export interface TimersConfig {
   enabled?: boolean;
   store?: string;
+  defaults?: Array<{
+    name: string;
+    type: "cron" | "interval" | "once";
+    schedule: string;
+    prompt: string;
+    timezone?: string;
+  }>;
 }
 
 export interface IdentityConfig {
