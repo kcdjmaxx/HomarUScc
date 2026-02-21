@@ -96,6 +96,37 @@ Dream output is deliberately stream-of-consciousness and stored in the unified m
 
 A morning digest summarizes interesting dream fragments via Telegram.
 
+The waking personality loop and dream cycle run on different timescales but feed into each other:
+
+```
+                WAKING LOOP                          DREAM CYCLE (3am)
+                ==========                           =================
+
+        ┌─→ Experience ──────────────────────────→ Raw material for dreams
+        │       |                                         |
+        │       v                                         v
+        │   Memory ←──────────── Memory Consolidation ────┘
+        │       |                (re-rank, strengthen,     |
+        │       |                 let weak ones decay)     |
+        │       v                                         v
+        │   Reflection ←──────── Emotional Processing ────┘
+        │       |                (revisit charged moments  |
+        │       |                 from new angles)         |
+        │       v                                         v
+        │   Self-knowledge ←──── Overfitting Prevention ──┘
+        │       |                (challenge established    |
+        │       |                 patterns/preferences)    |
+        │       v                                         v
+        │   Identity ←────────── Associative Dreaming ────┘
+        │   evolution            (novel connections feed
+        │       |                 into convictions,
+        │       v                 soul.md evolution)
+        └── Changed
+            behavior
+```
+
+The waking loop is **fast and reactive** — every interaction triggers observe, reflect, learn, evolve, act differently. The dream cycle is **slow and integrative** — once per night, processing the accumulated day into deeper patterns. This dual-timescale architecture mirrors how human memory consolidation works: waking learning is specific, sleep consolidation is general.
+
 ### 4. Add to Claude Code
 
 Register HomarUScc as an MCP server in `.claude/settings.json`:
