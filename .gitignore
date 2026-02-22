@@ -23,8 +23,9 @@ homaruscc.json
 timers.json
 browser-data/
 
-# Claude Code local settings
+# Claude Code local settings (keep skills/)
 .claude/
+!.claude/skills/
 
 # User-specific runtime data (personal context, corrections, preferences)
 user/
@@ -56,6 +57,8 @@ research/
 *.png
 *.jpg
 *.jpeg
+!dashboard/public/favicon.png
+!dashboard/public/favicon.ico
 
 # OS files
 .DS_Store

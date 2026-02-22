@@ -1,5 +1,8 @@
 // CRC: crc-TelegramChannelAdapter.md | Seq: seq-event-flow.md
 // Telegram adapter — from HomarUS
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { OutboundMessage, HealthStatus, Logger, ChannelConfig, DmPolicy, GroupPolicy } from "./types.js";
 import { ChannelAdapter } from "./channel-adapter.js";
 
@@ -21,12 +24,38 @@ interface TelegramMessageEntity {
   length: number;
 }
 
+interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+interface TelegramFile {
+  file_id: string;
+  file_unique_id: string;
+  file_size?: number;
+  file_path?: string;
+}
+
 interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
+  caption?: string;
   entities?: TelegramMessageEntity[];
+  photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
 }
 
 interface TelegramUpdate {
@@ -66,12 +95,15 @@ export class TelegramChannelAdapter extends ChannelAdapter {
   private allowedChatIds: Set<number>;
   private recentMessages: Array<{ from: string; text: string; chatId: string; timestamp: number }> = [];
   private maxRecentMessages = 50;
+  private mediaDir: string;
 
   constructor(config: TelegramAdapterConfig, logger: Logger) {
     super("telegram", logger, config.dmPolicy ?? "open", config.groupPolicy ?? "mention_required");
     this.token = config.token;
     this.pollingInterval = config.pollingInterval ?? 1000;
     this.allowedChatIds = new Set(config.allowedChatIds ?? []);
+    this.mediaDir = join(homedir(), ".homaruscc", "telegram-media");
+    if (!existsSync(this.mediaDir)) mkdirSync(this.mediaDir, { recursive: true });
   }
 
   static fromChannelConfig(config: ChannelConfig, logger: Logger): TelegramChannelAdapter {
@@ -190,20 +222,30 @@ export class TelegramChannelAdapter extends ChannelAdapter {
   }
 
   private handleMessage(msg: TelegramMessage): void {
-    if (!msg.text) return;
+    const hasMedia = msg.photo || msg.document;
+    if (!msg.text && !hasMedia) return;
 
     if (this.allowedChatIds.size > 0 && !this.allowedChatIds.has(msg.chat.id)) {
       this.logger.debug("Message from non-whitelisted chat, ignoring", { chatId: msg.chat.id });
       return;
     }
 
+    // Handle media messages asynchronously
+    if (hasMedia) {
+      this.handleMediaMessage(msg).catch((err) => {
+        this.logger.warn("Failed to handle media message", { error: String(err) });
+      });
+      return;
+    }
+
     const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
     const isMention = this.detectMention(msg);
+    const text = msg.text!;
 
     // Store for MCP read tool
     this.recentMessages.push({
       from: msg.from?.username ?? String(msg.from?.id ?? "unknown"),
-      text: isMention ? this.stripMention(msg.text) : msg.text,
+      text: isMention ? this.stripMention(text) : text,
       chatId: String(msg.chat.id),
       timestamp: Date.now(),
     });
@@ -217,12 +259,88 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     this.deliverWithTarget({
       from: msg.from?.username ?? String(msg.from?.id ?? "unknown"),
       channel: "telegram",
-      text: isMention ? this.stripMention(msg.text) : msg.text,
+      text: isMention ? this.stripMention(text) : text,
       isGroup,
       isMention,
       replyTo: String(msg.message_id),
       raw: msg,
     }, String(msg.chat.id));
+  }
+
+  private async handleMediaMessage(msg: TelegramMessage): Promise<void> {
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+    const chatId = String(msg.chat.id);
+    const from = msg.from?.username ?? String(msg.from?.id ?? "unknown");
+    const caption = msg.caption ?? "";
+
+    let fileId: string;
+    let ext: string;
+
+    if (msg.photo) {
+      // Telegram sends multiple sizes — pick the largest
+      const largest = msg.photo[msg.photo.length - 1];
+      fileId = largest.file_id;
+      ext = ".jpg";
+    } else if (msg.document) {
+      fileId = msg.document.file_id;
+      const name = msg.document.file_name ?? "file";
+      const dotIdx = name.lastIndexOf(".");
+      ext = dotIdx >= 0 ? name.substring(dotIdx) : "";
+    } else {
+      return;
+    }
+
+    // Download the file
+    const localPath = await this.downloadFile(fileId, ext);
+    if (!localPath) {
+      this.logger.warn("Failed to download media file", { fileId });
+      return;
+    }
+
+    // Build text that tells Claude where the file is
+    const mediaType = msg.photo ? "photo" : "document";
+    const text = caption
+      ? `[${mediaType}: ${localPath}] ${caption}`
+      : `[${mediaType}: ${localPath}]`;
+
+    this.recentMessages.push({ from, text, chatId, timestamp: Date.now() });
+    if (this.recentMessages.length > this.maxRecentMessages) {
+      this.recentMessages.shift();
+    }
+
+    this.sendTyping(chatId).catch(() => {});
+
+    this.deliverWithTarget({
+      from,
+      channel: "telegram",
+      text,
+      isGroup,
+      isMention: false,
+      replyTo: String(msg.message_id),
+      raw: { ...msg, localMediaPath: localPath },
+    }, chatId);
+  }
+
+  private async downloadFile(fileId: string, ext: string): Promise<string | null> {
+    try {
+      const fileInfo = await this.apiCall<TelegramFile>("getFile", { file_id: fileId });
+      if (!fileInfo.file_path) return null;
+
+      const url = `https://api.telegram.org/file/bot${this.token}/${fileInfo.file_path}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const filename = `${Date.now()}-${fileInfo.file_unique_id}${ext}`;
+      const localPath = join(this.mediaDir, filename);
+      writeFileSync(localPath, buffer);
+
+      this.logger.info("Downloaded Telegram media", { localPath, size: buffer.length });
+      return localPath;
+    } catch (err) {
+      this.logger.warn("Telegram file download failed", { error: String(err) });
+      return null;
+    }
   }
 
   private detectMention(msg: TelegramMessage): boolean {

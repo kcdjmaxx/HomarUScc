@@ -55,12 +55,13 @@ The skill prompt provides heuristics for this decision.
 
 The backend tracks agents via a new REST endpoint and in-memory registry:
 
-- `POST /api/agents` — Register a new agent (id, description, outputFile)
+- `POST /api/agents` — Register a new agent (id, description)
 - `GET /api/agents` — List all tracked agents with status
-- `PATCH /api/agents/:id` — Update agent status (completed/failed) with result
+- `POST /api/agents/:id/complete` — Completion callback: agent calls this when done with `{ result }` or `{ error }`
+- `PATCH /api/agents/:id` — Update agent status manually (completed/failed) with result
 - `DELETE /api/agents/:id` — Remove completed agent from registry
 
-When an agent is marked completed, the backend emits an `agent_completed` event into the event system, which wakes the main loop via `/api/wait`.
+When an agent completes, it calls `POST /api/agents/:id/complete` which emits an `agent_completed` event, waking the main loop via `/api/wait`. A 30-minute timeout fallback catches agents that fail to call back.
 
 ### Concurrency Control
 

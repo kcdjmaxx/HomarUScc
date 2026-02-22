@@ -251,7 +251,6 @@ export class HomarUScc {
     const maxConcurrent = configData.agents?.maxConcurrent ?? 3;
     this.agentRegistry = new AgentRegistry(this.logger, maxConcurrent);
     this.agentRegistry.setEmitter((e) => this.emit(e));
-    this.agentRegistry.startPolling();
 
     // 5. Register built-in tools
     registerBuiltinTools(this.toolRegistry, this.memoryIndex, this.logger, this.browserService);
@@ -317,7 +316,7 @@ export class HomarUScc {
     }
     this.eventWaiters.clear();
     this.config.stopWatching();
-    this.agentRegistry.stopPolling();
+    this.agentRegistry.stop();
     this.timerService.stop();
     await this.browserService?.stop();
     await this.channelManager.disconnectAll();

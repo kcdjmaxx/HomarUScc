@@ -1,5 +1,5 @@
 // CRC: crc-DashboardFrontend.md
-type View = "chat" | "events" | "status" | "memory";
+type View = "chat" | "events" | "status" | "memory" | "apps";
 
 interface Props {
   view: View;
@@ -14,6 +14,7 @@ const items: Array<{ id: View; label: string; icon: string }> = [
   { id: "events", label: "Events", icon: "#" },
   { id: "status", label: "Status", icon: "~" },
   { id: "memory", label: "Memory", icon: "@" },
+  { id: "apps", label: "Apps", icon: "+" },
 ];
 
 export function Sidebar({ view, onViewChange, connected, isMobile, onClose }: Props) {

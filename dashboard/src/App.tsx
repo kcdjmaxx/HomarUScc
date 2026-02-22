@@ -6,8 +6,9 @@ import { Chat } from "./components/Chat";
 import { EventLog } from "./components/EventLog";
 import { StatusPanel } from "./components/StatusPanel";
 import { MemoryBrowser } from "./components/MemoryBrowser";
+import { AppsView } from "./components/AppsView";
 
-type View = "chat" | "events" | "status" | "memory";
+type View = "chat" | "events" | "status" | "memory" | "apps";
 
 const wsUrl = `ws://${window.location.hostname}:${window.location.port || 3120}`;
 
@@ -69,6 +70,7 @@ export function App() {
         {view === "events" && <EventLog messages={messages} />}
         {view === "status" && <StatusPanel messages={messages} send={send} />}
         {view === "memory" && <MemoryBrowser send={send} messages={messages} />}
+        {view === "apps" && <AppsView />}
       </main>
     </div>
   );

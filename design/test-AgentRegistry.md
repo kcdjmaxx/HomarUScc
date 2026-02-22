@@ -3,7 +3,7 @@
 
 ## Test: register adds agent
 **Purpose:** Verify agent registration succeeds under capacity
-**Input:** register("id1", "research task", "/tmp/out.txt") with maxConcurrent=3
+**Input:** register("id1", "research task") with maxConcurrent=3
 **Expected:** getAll() returns 1 agent with status "running"
 **Refs:** crc-AgentRegistry.md
 
@@ -17,6 +17,12 @@
 **Purpose:** Verify agent completion emits agent_completed event
 **Input:** Register agent, then complete("id1", "results here")
 **Expected:** Emitter called with event type "agent_completed", agent status changes to "completed"
+**Refs:** crc-AgentRegistry.md
+
+## Test: complete is idempotent
+**Purpose:** Verify calling complete on an already-completed agent is a no-op
+**Input:** Register agent, complete("id1", "first"), complete("id1", "second")
+**Expected:** Emitter called only once, result stays "first"
 **Refs:** crc-AgentRegistry.md
 
 ## Test: fail emits event
@@ -37,32 +43,14 @@
 **Expected:** getAvailableSlots() returns 1
 **Refs:** crc-AgentRegistry.md
 
-## Test: polling detects completion marker
-**Purpose:** Verify file tail is checked for completion markers
-**Input:** Register agent with outputFile, write file containing `"stop_reason":"end_turn"` in last 512 bytes, call pollAgents()
-**Expected:** Agent status changes to "completed", agent_completed event emitted
-**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+## Test: timeout marks agent as timed out
+**Purpose:** Verify agents running too long get timed out
+**Input:** Register agent, manually set startTime to 31 minutes ago, trigger checkTimeouts()
+**Expected:** Agent status changes to "timeout", agent_timeout event emitted
+**Refs:** crc-AgentRegistry.md
 
-## Test: polling detects stable mtime
-**Purpose:** Verify stable mtime detection completes agent
-**Input:** Register agent with outputFile, write file with content, set mtime to 15 seconds ago, call pollAgents()
-**Expected:** Agent status changes to "completed", agent_completed event emitted
-**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
-
-## Test: polling skips missing file
-**Purpose:** Verify ENOENT is handled gracefully
-**Input:** Register agent with outputFile pointing to non-existent path, call pollAgents()
-**Expected:** Agent remains "running", no error thrown
-**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
-
-## Test: polling skips already completed agent
-**Purpose:** Verify no duplicate completion events
-**Input:** Register agent, complete it manually, call pollAgents()
-**Expected:** Emitter called only once (from manual complete), not again from poll
-**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
-
-## Test: stopPolling clears interval
-**Purpose:** Verify polling does not keep process alive
-**Input:** startPolling(), then stopPolling()
-**Expected:** pollTimer is null, no further poll cycles execute
-**Refs:** crc-AgentRegistry.md, seq-agent-poll.md
+## Test: stop clears timeout checker
+**Purpose:** Verify timeout checker does not keep process alive
+**Input:** Register agent (starts timeout checker), then call stop()
+**Expected:** timeoutTimer is null
+**Refs:** crc-AgentRegistry.md

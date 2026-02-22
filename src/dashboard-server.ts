@@ -2,8 +2,9 @@
 // Dashboard server — Express + WebSocket for the web dashboard
 import { createServer, type Server as HttpServer } from "node:http";
 import { resolve, join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { homedir } from "node:os";
 import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Logger, Event } from "./types.js";
@@ -222,8 +223,8 @@ export class DashboardServer {
 
     // --- Agent Registry endpoints (R137, R138, R139) ---
     this.app.post("/api/agents", express.json(), (req, res) => {
-      const { id, description, outputFile } = req.body as { id: string; description: string; outputFile?: string };
-      const ok = this.loop.getAgentRegistry().register(id, description, outputFile);
+      const { id, description } = req.body as { id: string; description: string };
+      const ok = this.loop.getAgentRegistry().register(id, description);
       if (ok) {
         res.json({ ok: true });
       } else {
@@ -249,6 +250,19 @@ export class DashboardServer {
 
     this.app.delete("/api/agents/:id", (req, res) => {
       this.loop.getAgentRegistry().cleanup(req.params.id);
+      res.json({ ok: true });
+    });
+
+    // Agent completion callback — agents POST here when done
+    this.app.post("/api/agents/:id/complete", express.json(), (req, res) => {
+      const { id } = req.params;
+      const { result, error } = req.body as { result?: string; error?: string };
+      const registry = this.loop.getAgentRegistry();
+      if (error) {
+        registry.fail(id, error);
+      } else {
+        registry.complete(id, result ?? "(completed)");
+      }
       res.json({ ok: true });
     });
 
@@ -297,6 +311,44 @@ export class DashboardServer {
       } catch (err) {
         res.status(500).json({ error: `Resource error: ${String(err)}` });
       }
+    });
+
+    // --- Apps Platform endpoints ---
+    const appsDir = join(homedir(), ".homaruscc", "apps");
+
+    this.app.get("/api/apps", (_req, res) => {
+      if (!existsSync(appsDir)) { res.json([]); return; }
+      const apps: unknown[] = [];
+      for (const slug of readdirSync(appsDir)) {
+        const manifestPath = join(appsDir, slug, "manifest.json");
+        if (existsSync(manifestPath)) {
+          try {
+            const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+            apps.push({ ...manifest, slug });
+          } catch { /* skip invalid manifests */ }
+        }
+      }
+      res.json(apps);
+    });
+
+    this.app.get("/api/apps/:slug/data", (req, res) => {
+      const dataPath = join(appsDir, req.params.slug, "data.json");
+      if (!existsSync(dataPath)) { res.json({}); return; }
+      try { res.json(JSON.parse(readFileSync(dataPath, "utf8"))); }
+      catch { res.json({}); }
+    });
+
+    this.app.put("/api/apps/:slug/data", express.json(), (req, res) => {
+      const dataPath = join(appsDir, req.params.slug, "data.json");
+      writeFileSync(dataPath, JSON.stringify(req.body, null, 2));
+      res.json({ ok: true });
+    });
+
+    // Serve static files from app directories (icons, etc.)
+    this.app.get("/api/apps/:slug/static/:file", (req, res) => {
+      const filePath = join(appsDir, req.params.slug, req.params.file);
+      if (!existsSync(filePath)) { res.status(404).end(); return; }
+      res.sendFile(filePath);
     });
 
     // Serve built dashboard in production

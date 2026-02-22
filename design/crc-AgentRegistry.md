@@ -1,31 +1,31 @@
 # AgentRegistry
-**Requirements:** R136, R137, R138, R139, R140, R141, R146, R147, R154, R155, R156, R157, R158, R159, R160, R161, R162
+**Requirements:** R136, R137, R138, R139, R140, R141, R146, R147
 **Refs:** ref-claude-code-task-tool
 
 ## Knows
 - agents: Map<string, AgentEntry> — tracked background agents
 - maxConcurrent: number — from config (default 3)
 - emitter: (event: Event) => void — callback to emit events into the loop
-- pollIntervalMs: number — how often to poll output files (default 5000)
-- pollTimer: NodeJS.Timeout | null — the global polling interval handle
-- stableThresholdMs: number — how long mtime must be stable to consider file complete (10000)
+- timeoutMs: number — how long before a running agent is timed out (default 30 min)
+- timeoutTimer: NodeJS.Timeout | null — periodic check for timed-out agents
 
 ## Does
-- register(id, description, outputFile): boolean — Adds agent to registry. Returns false if at capacity.
+- register(id, description): boolean — Adds agent to registry. Returns false if at capacity. Starts timeout checker.
 - getAll(): AgentEntry[] — Returns all tracked agents
 - get(id): AgentEntry | null — Returns specific agent
-- complete(id, result): void — Marks agent as completed, emits `agent_completed` event, schedules cleanup
+- complete(id, result): void — Marks agent as completed, emits `agent_completed` event. Called via POST /api/agents/:id/complete callback.
 - fail(id, error): void — Marks agent as failed, emits `agent_failed` event
 - getAvailableSlots(): number — Returns maxConcurrent minus active count
 - cleanup(id): void — Removes agent from registry after result delivery
-- startPolling(): void — Starts a single global setInterval that checks all running agents with outputFiles
-- stopPolling(): void — Clears the polling interval so it does not keep the process alive
-- pollAgents(): void — Iterates running agents with outputFiles, checks file tail for completion markers or stable mtime
+- stop(): void — Clears the timeout checker interval
 
 ## Collaborators
-- HomarUScc: provides event emitter, loads config for maxConcurrent, calls startPolling/stopPolling
-- DashboardServer: exposes REST endpoints for agent lifecycle
+- HomarUScc: provides event emitter, loads config for maxConcurrent
+- DashboardServer: exposes REST endpoints for agent lifecycle including POST /api/agents/:id/complete callback
 
 ## Sequences
 - seq-agent-dispatch.md
-- seq-agent-poll.md
+
+## Completion Detection
+Agents signal completion by calling `POST /api/agents/:id/complete` with `{ result: "summary" }` when they finish.
+A timeout fallback (30 min default) catches agents that fail to call back.

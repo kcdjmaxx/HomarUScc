@@ -154,6 +154,7 @@ Restart Claude Code. HomarUScc's tools will appear automatically. The proxy auto
 |------|-------------|
 | `telegram_send` | Send a message to a Telegram chat |
 | `telegram_read` | Read recent incoming messages |
+| `telegram_typing` | Send a typing indicator |
 | `memory_search` | Hybrid vector + full-text search over stored content |
 | `memory_store` | Store and index content for later retrieval |
 | `timer_schedule` | Schedule cron, interval, or one-shot timers |
@@ -282,7 +283,7 @@ For tasks that would consume significant context (research, multi-file processin
 
 Max concurrent agents is configurable via `agents.maxConcurrent` in config (default 3). The agent registry tracks running/completed/failed agents and includes them in post-compaction context so background work isn't lost across compaction boundaries.
 
-**Completion detection:** The backend polls output files of registered agents every 5 seconds. When it detects a completion marker (stable file mtime for 10+ seconds, or `"stop_reason":"end_turn"` in the output), it emits an `agent_completed` event that wakes the main event loop. No manual checking needed — results arrive as events.
+**Completion detection:** Agents signal completion by calling `POST /api/agents/:id/complete` with a result summary. This emits an `agent_completed` event that wakes the main event loop. A 30-minute timeout fallback catches agents that fail to call back. No polling needed — results arrive as events.
 
 ## Architecture
 
@@ -299,13 +300,13 @@ Key source files:
 | `src/mcp-tools.ts` | MCP tool definitions |
 | `src/mcp-resources.ts` | MCP resource definitions |
 | `src/config.ts` | Config loader with env var resolution and hot-reload |
-| `src/telegram-adapter.ts` | Telegram long-polling adapter |
+| `src/telegram-adapter.ts` | Telegram long-polling adapter (text, photos, documents) |
 | `src/dashboard-server.ts` | Express + WebSocket dashboard server |
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search with dream-aware scoring |
 | `src/compaction-manager.ts` | Auto-flush memory before context compaction |
 | `src/session-checkpoint.ts` | Save/restore task context across compaction |
-| `src/agent-registry.ts` | Track background agents with capacity limits |
+| `src/agent-registry.ts` | Track background agents with callback completion and timeout fallback |
 | `src/transcript-logger.ts` | Session transcript capture and indexing |
 | `src/identity-manager.ts` | Identity loader (soul.md, user.md, state.md) |
 | `src/timer-service.ts` | Cron, interval, and one-shot timers |

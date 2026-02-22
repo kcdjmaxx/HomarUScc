@@ -206,7 +206,7 @@
 - **R133:** Main event loop dispatches heavy tasks to background Claude Code Task agents with isolated context windows
 - **R134:** Dispatch decision is made by Claude in the skill prompt: inline for quick responses, dispatch for heavy work
 - **R135:** Background agents are spawned via Task tool with `run_in_background: true`
-- **R136:** Backend maintains an in-memory agent registry tracking: id, description, status, startTime, outputFile
+- **R136:** Backend maintains an in-memory agent registry tracking: id, description, status, startTime
 - **R137:** `POST /api/agents` registers a new agent in the registry
 - **R138:** `GET /api/agents` returns all tracked agents with current status
 - **R139:** `PATCH /api/agents/:id` updates agent status (completed/failed) with result summary
@@ -229,18 +229,18 @@
 - **R152:** `/api/wait` returns full identity payload (soul, user, state, `identity.full: true`) on the first wake after context compaction
 - **R153:** Skill prompt documents both identity response formats (digest vs full) with JSON examples and branching logic
 
-## Feature: Agent Completion Polling
-**Source:** specs/agent-completion-polling.md
+## Feature: Agent Completion Callback
+**Source:** (replaces agent-completion-polling.md)
 
-- **R154:** AgentRegistry polls output files of registered agents to detect completion
-- **R155:** Poll interval is configurable via constructor parameter (default 5000ms)
-- **R156:** Detection checks file tail (last 512 bytes) for completion markers (`"stop_reason":"end_turn"` or `"type":"result"`) or stable mtime (no modification in 10 seconds)
-- **R157:** On detection, call existing `complete()` method which emits `agent_completed` event
-- **R158:** Only poll agents with status "running" that have an outputFile set
-- **R159:** `startPolling()` begins a single global setInterval; `stopPolling()` clears it so it does not keep the process alive
-- **R160:** (inferred) `cleanup(id)` clears any per-agent polling state
-- **R161:** (inferred) File read errors (ENOENT, permission) are logged and skipped, not thrown
-- **R162:** (inferred) Agents are only completed once — skip agents already completed/failed
+- **R154:** Agents signal completion by calling `POST /api/agents/:id/complete` with `{ result }` or `{ error }`
+- **R155:** `POST /api/agents/:id/complete` endpoint calls `complete()` or `fail()` on the registry, emitting events
+- **R156:** A timeout fallback (default 30 min) marks agents as "timeout" if they never call back
+- **R157:** Timeout checker runs every 60s, only while agents are registered, and unrefs to not block shutdown
+- **R158:** (removed — file polling replaced by callback)
+- **R159:** (removed — replaced by timeout checker)
+- **R160:** (inferred) `cleanup(id)` removes agent; stops timeout checker when no agents remain
+- **R161:** (removed — no file I/O in completion detection)
+- **R162:** (inferred) Agents are only completed once — skip agents already completed/failed/timed-out
 
 ## Feature: On Birth (First-Run Wizard)
 **Source:** specs/on-birth/on-birth.md
