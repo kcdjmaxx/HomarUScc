@@ -54,6 +54,11 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-AgentRegistry.md → `src/agent-registry.ts`
 - [x] crc-AgentDispatchPrompt.md → `.claude/skills/homaruscc`
 
+### Dashboard Apps Platform
+- [ ] crc-AppRegistry.md → `src/app-registry.ts`
+- [ ] crc-AppDataStore.md → `src/app-data-store.ts`
+- [ ] crc-AppsFrontend.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/AppShell.tsx`
+
 ### Sequences
 - [x] seq-startup.md → `src/homaruscc.ts`, `src/mcp-server.ts`
 - [x] seq-event-flow.md → `src/homaruscc.ts`, `src/event-bus.ts`, `src/event-queue.ts`, `src/channel-manager.ts`, `src/mcp-server.ts`
@@ -69,6 +74,10 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-compaction-checkpoint.md → `src/session-checkpoint.ts`, `src/compaction-manager.ts`, `src/dashboard-server.ts`
 - [x] seq-agent-dispatch.md → `src/agent-registry.ts`, `src/dashboard-server.ts`
 - [x] seq-agent-poll.md → `src/agent-registry.ts`
+
+- [ ] seq-apps-startup.md → `src/app-registry.ts`, `src/homaruscc.ts`
+- [ ] seq-apps-invoke.md → `src/app-data-store.ts`, `src/mcp-tools.ts`
+- [ ] seq-apps-load.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/AppShell.tsx`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`
 
 ### On Birth (First-Run Wizard)
 - [ ] crc-Cli.md → `src/cli.ts`
@@ -95,6 +104,9 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] test-SessionCheckpoint.md → `src/session-checkpoint.ts`
 - [x] test-AgentRegistry.md → `src/agent-registry.ts`
 
+- [ ] test-AppRegistry.md → `src/app-registry.ts`
+- [ ] test-AppDataStore.md → `src/app-data-store.ts`
+
 ## Gaps
 
 - [x] O1: No unit tests implemented yet (test designs exist but no test files in src/)
@@ -111,3 +123,9 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [ ] O11: No Windows support for openBrowser (only macOS `open` and Linux `xdg-open` covered by R181)
 - [ ] O12: ClaudeCodeRegistrar assumes JSON structure of settings files -- may need to handle edge cases (malformed JSON, read-only permissions)
 - [ ] O13: npm publish workflow not documented (version bump, npm login, publish command sequence)
+
+- [ ] O14: App component compilation strategy TBD — MVP could serve raw TSX through Vite dev server or pre-compile to JS (R199, R200)
+- [ ] O15: No app versioning or migration strategy for data.json schema changes (R195)
+- [ ] O16: No test design for AppsFrontend (React component — consider integration test approach)
+- [ ] O17: DashboardServer and DashboardFrontend CRC cards need updating when apps are implemented (new routes, new view type)
+- [ ] O18: App hot-reload on file change requires dashboard frontend to re-fetch app list and/or reload component (R201)

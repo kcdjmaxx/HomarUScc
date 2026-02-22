@@ -51,6 +51,12 @@ ReadingList.md
 competitor-intel/
 research/
 
+# Images (generated avatars, etc.)
+*.PNG
+*.png
+*.jpg
+*.jpeg
+
 # OS files
 .DS_Store
 Thumbs.db

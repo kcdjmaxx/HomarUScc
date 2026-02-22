@@ -267,3 +267,33 @@
 - **R182:** (inferred) Config.json written by wizard disables channels not selected (e.g., omits telegram section if not chosen)
 - **R183:** (inferred) Wizard prints a summary of created files and next steps on completion
 - **R184:** (inferred) Identity template path copies all 5 files from identity.example/ and interpolates agent name and user name where applicable
+
+## Feature: Dashboard Apps Platform
+**Source:** specs/apps-platform.md
+
+- **R185:** Apps are React components registered with the dashboard, each with its own route (/apps/{slug})
+- **R186:** Apps are discovered from manifest files at `~/.homaruscc/apps/{slug}/manifest.json`
+- **R187:** Each app manifest declares: name, description, slug, version, and hook definitions (read, write, describe)
+- **R188:** Dashboard sidebar includes an "Apps" section listing all registered apps
+- **R189:** Each app can declare hooks (read, write, describe) for agent integration
+- **R190:** A single MCP tool `app_invoke` dispatches to app hooks by slug and hook name
+- **R191:** `read` hook returns the app's current data.json contents as JSON
+- **R192:** `write` hook accepts a JSON payload and writes to the app's data.json
+- **R193:** `describe` hook returns a natural language summary of the app's state (agent-generated from data)
+- **R194:** Each app stores data in `~/.homaruscc/apps/{slug}/data.json`
+- **R195:** App data persists across dashboard restarts
+- **R196:** Agent accesses app data only through hooks, not by direct file reads
+- **R197:** On backend startup, scan `~/.homaruscc/apps/*/manifest.json` to build the app registry
+- **R198:** REST endpoint `GET /api/apps` returns the list of registered apps with metadata
+- **R199:** REST endpoint `GET /api/apps/:slug/component` serves the compiled app component JS
+- **R200:** Frontend dynamically imports app components at runtime from the backend
+- **R201:** Backend watches `~/.homaruscc/apps/` for new/changed manifests and updates registry
+- **R202:** Apps are served through the same Express server (port 3120), accessible over Tailscale
+- **R203:** Apps should be mobile-responsive using inline styles consistent with the dashboard
+- **R204:** App directory defaults to `~/.homaruscc/apps/`, configurable via `dashboard.apps.directory`
+- **R205:** (inferred) Create apps directory on first access if it does not exist
+- **R206:** (inferred) Invalid manifests are logged and skipped, not fatal
+- **R207:** (inferred) `GET /api/apps` also serves as the app list for the MCP tool to enumerate available apps
+- **R208:** (inferred) App creation by the agent uses existing filesystem MCP tools to write manifest.json and component source
+- **R209:** (inferred) The `app_invoke` tool returns errors gracefully if the app or hook does not exist
+- **R210:** (inferred) Frontend shows an empty state in the Apps view when no apps are installed

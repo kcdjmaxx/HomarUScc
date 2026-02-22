@@ -5,6 +5,8 @@ interface Props {
   view: View;
   onViewChange: (v: View) => void;
   connected: boolean;
+  isMobile?: boolean;
+  onClose?: () => void;
 }
 
 const items: Array<{ id: View; label: string; icon: string }> = [
@@ -14,12 +16,23 @@ const items: Array<{ id: View; label: string; icon: string }> = [
   { id: "memory", label: "Memory", icon: "@" },
 ];
 
-export function Sidebar({ view, onViewChange, connected }: Props) {
+export function Sidebar({ view, onViewChange, connected, isMobile, onClose }: Props) {
+  const navStyle = isMobile
+    ? { ...styles.nav, ...styles.navMobile }
+    : styles.nav;
+
   return (
-    <nav style={styles.nav}>
-      <div style={styles.brand}>
-        <div style={styles.logo}>H</div>
-        <span style={styles.title}>HomarUScc</span>
+    <nav style={navStyle}>
+      <div style={styles.brandRow}>
+        <div style={styles.brand}>
+          <div style={styles.logo}>H</div>
+          <span style={styles.title}>HomarUScc</span>
+        </div>
+        {isMobile && onClose && (
+          <button onClick={onClose} style={styles.closeBtn} aria-label="Close menu">
+            &times;
+          </button>
+        )}
       </div>
 
       <div style={styles.status}>
@@ -59,12 +72,26 @@ const styles = {
     flexDirection: "column" as const,
     padding: "16px 0",
   },
+  navMobile: {
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    bottom: 0,
+    zIndex: 200,
+    width: 240,
+    boxShadow: "4px 0 24px rgba(0,0,0,0.5)",
+  },
+  brandRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 16px 16px",
+    borderBottom: "1px solid #1e1e2e",
+  },
   brand: {
     display: "flex",
     alignItems: "center",
     gap: 8,
-    padding: "0 16px 16px",
-    borderBottom: "1px solid #1e1e2e",
   },
   logo: {
     width: 28,
@@ -82,6 +109,15 @@ const styles = {
     fontWeight: 600,
     fontSize: 14,
     color: "#e0e0e8",
+  },
+  closeBtn: {
+    background: "none",
+    border: "none",
+    color: "#8888a0",
+    fontSize: 22,
+    cursor: "pointer",
+    padding: "0 4px",
+    fontFamily: "inherit",
   },
   status: {
     display: "flex",

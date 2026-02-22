@@ -190,6 +190,19 @@ When enabled, the dashboard runs on `http://localhost:3120` with:
 - System status panel
 - Memory search browser
 
+The dashboard is responsive — on mobile devices the sidebar collapses into a hamburger menu. Accessible remotely over Tailscale at `http://<your-tailscale-ip>:3120`.
+
+### Apps Platform (planned)
+
+The dashboard supports a pluggable apps system. The agent can build mini web apps on request (budget trackers, reading lists, dashboards) that live inside the dashboard UI:
+
+- Apps live at `~/.homaruscc/apps/{slug}/` with a manifest, React component, and JSON data store
+- Each app declares hooks (`read`, `write`, `describe`) exposed via a single `app_invoke` MCP tool
+- The agent can query and update app state through hooks — "what's on my reading list?" triggers `app_invoke(slug=reading-list, hook=describe)`
+- Apps are created by the agent via filesystem tools and auto-discovered on manifest scan
+
+See `specs/apps-platform.md` and `design/crc-App*.md` for the full design.
+
 ### Dashboard Development
 
 ```bash
