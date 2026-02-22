@@ -27,36 +27,8 @@ browser-data/
 .claude/
 !.claude/skills/
 
-# User-specific runtime data (personal context, corrections, preferences)
-user/
-
-# System runtime data (learned corrections)
-system/
-
-# Internal planning docs (not for GitHub)
-homarusPlan.md
-homarusRoadmap.md
-
-# Dream logs (private, generated nightly)
-dreams/
-
-# Private outreach & session docs
-linkedin-draft.md
-wissner-gross-outreach*.md
-wissner-gross-research.md
-homaruscc-vs-openclaw.md
-session-2026-*
-ReadingList.md
-autobiography.md
-coinbase-agentic-wallet-research.md
-competitor-intel-*.md
-
-# Memory runtime data (stored by memory_store tool)
-competitor-intel/
-research/
-
-# CRM data (personal contacts)
-crm/
+# Local user data (CRM, dreams, research, outreach, user context, etc.)
+local/
 
 # Images (generated avatars, etc.)
 *.PNG

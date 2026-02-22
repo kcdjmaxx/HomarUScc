@@ -4,12 +4,25 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "./types.js";
 import type { HomarUScc } from "./homaruscc.js";
 
+interface CompactionRecord {
+  timestamp: number;
+  loopRestarted: boolean; // Did /api/wait get called after this compaction?
+}
+
 export class CompactionManager {
   private flushedThisCycle = false;
   private lastFlushTimestamp = 0;
   private compactedSinceLastWake = false; // R150: track compaction for digest vs full delivery
   private logger: Logger;
   private loop: HomarUScc;
+
+  // Compaction debug counter
+  private compactionCount = 0;
+  private compactionHistory: CompactionRecord[] = [];
+  private pendingCompaction: CompactionRecord | null = null;
+
+  // Event loop tracking — set true on first /api/wait call, stays true forever
+  private eventLoopActive = false;
 
   constructor(loop: HomarUScc, logger: Logger) {
     this.loop = loop;
@@ -25,6 +38,11 @@ export class CompactionManager {
     this.flushedThisCycle = true;
     this.lastFlushTimestamp = Date.now();
     this.compactedSinceLastWake = true; // Set here since only PreCompact hook exists in Claude Code
+
+    // Track compaction for debugging loop failures
+    this.compactionCount++;
+    this.pendingCompaction = { timestamp: this.lastFlushTimestamp, loopRestarted: false };
+    this.logger.info(`Compaction #${this.compactionCount} at ${new Date(this.lastFlushTimestamp).toISOString()}`);
 
     this.loop.emit({
       id: randomUUID(),
@@ -52,7 +70,7 @@ export class CompactionManager {
     const checkpoint = this.loop.getSessionCheckpoint();
     checkpoint.update({ modifiedFiles: [] }); // trigger timestamp update
 
-    return [
+    const lines = [
       "IMPORTANT: Context compaction is about to occur. Save any important session state to memory NOW.",
       "Use the memory_store tool to persist anything valuable from this session that hasn't been saved yet.",
       "",
@@ -67,7 +85,23 @@ export class CompactionManager {
       "",
       "Recent events:",
       eventSummary,
-    ].join("\n");
+    ];
+
+    // If the event loop was running, explicitly instruct the post-compaction instance to restart it
+    if (this.eventLoopActive) {
+      // Also save to checkpoint for belt-and-suspenders
+      checkpoint.update({ inProgressTask: "EVENT LOOP WAS ACTIVE — restart it after compaction: bash \"$PWD/bin/event-loop\"" });
+
+      lines.push(
+        "",
+        "CRITICAL: The event loop (bin/event-loop) was running before compaction.",
+        "After compaction, you MUST restart it immediately:",
+        '  bash "$PWD/bin/event-loop"',
+        "If you do not restart the event loop, you will stop receiving Telegram messages and timer events.",
+      );
+    }
+
+    return lines.join("\n");
   }
 
   handlePostCompact(): string {
@@ -137,6 +171,14 @@ export class CompactionManager {
       }
     }
 
+    if (this.eventLoopActive) {
+      lines.push(
+        "",
+        "CRITICAL: The event loop was running before compaction. Restart it NOW:",
+        '  bash "$PWD/bin/event-loop"',
+      );
+    }
+
     return lines.join("\n");
   }
 
@@ -149,15 +191,63 @@ export class CompactionManager {
   consumeCompactionFlag(): boolean {
     if (this.compactedSinceLastWake) {
       this.compactedSinceLastWake = false;
+      // Mark that the loop was restarted after this compaction
+      if (this.pendingCompaction) {
+        this.pendingCompaction.loopRestarted = true;
+        this.compactionHistory.push(this.pendingCompaction);
+        this.pendingCompaction = null;
+        this.logger.info(`Compaction #${this.compactionCount} — loop restarted successfully`);
+      }
       return true;
     }
     return false;
+  }
+
+  /**
+   * Called when /api/wait is invoked (even without compaction flag).
+   * If there's a pending compaction that hasn't been consumed yet,
+   * this means the loop restarted via normal wake, not post-compaction wake.
+   */
+  markLoopActive(): void {
+    if (this.pendingCompaction && !this.compactedSinceLastWake) {
+      // Edge case: compaction happened but flag was already consumed
+      // This shouldn't normally happen, but handle it gracefully
+    }
+  }
+
+  /** Called on first /api/wait — marks event loop as active for this backend lifetime */
+  setEventLoopActive(): void {
+    if (!this.eventLoopActive) {
+      this.eventLoopActive = true;
+      this.logger.info("Event loop marked active — will instruct restart after compaction");
+    }
+  }
+
+  isEventLoopActive(): boolean {
+    return this.eventLoopActive;
   }
 
   getFlushState(): { flushedThisCycle: boolean; lastFlushTimestamp: number } {
     return {
       flushedThisCycle: this.flushedThisCycle,
       lastFlushTimestamp: this.lastFlushTimestamp,
+    };
+  }
+
+  getCompactionStats(): {
+    count: number;
+    history: CompactionRecord[];
+    pending: CompactionRecord | null;
+    loopFailures: number;
+  } {
+    // A "failure" is a compaction where loopRestarted stayed false
+    // (pending compaction also counts as potentially failed if old enough)
+    const failures = this.compactionHistory.filter(c => !c.loopRestarted).length;
+    return {
+      count: this.compactionCount,
+      history: [...this.compactionHistory, ...(this.pendingCompaction ? [this.pendingCompaction] : [])],
+      pending: this.pendingCompaction,
+      loopFailures: failures,
     };
   }
 }

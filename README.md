@@ -217,19 +217,22 @@ npm run dev    # Dev server on :3121, proxies API to :3120
 
 ## Runtime Directories
 
-HomarUScc creates runtime data that's gitignored and stays local:
+HomarUScc creates runtime data that's gitignored and stays local. All user data lives under `local/` (one gitignore line):
 
 | Directory | Purpose |
 |-----------|---------|
-| `user/context/` | Facts the assistant learns about you |
-| `user/corrections/` | Corrections you've made (so it doesn't repeat mistakes) |
-| `user/preferences/` | Your stated preferences |
-| `system/` | System-level learned knowledge |
+| `local/user/context/` | Facts the assistant learns about you |
+| `local/user/corrections/` | Corrections you've made (so it doesn't repeat mistakes) |
+| `local/user/preferences/` | Your stated preferences |
+| `local/system/` | System-level learned knowledge |
+| `local/crm/` | CRM contact files (markdown + YAML frontmatter, see `crm.example/`) |
+| `local/dreams/` | Dream cycle output (nightly, stored at 0.5x weight) |
+| `local/research/` | Research notes stored by memory system |
+| `local/docs/` | Private documents (outreach drafts, session notes, etc.) |
 | `~/.homaruscc/memory/` | Vector + FTS search index (SQLite) |
 | `~/.homaruscc/identity/` | Agent identity files (soul, user, state, preferences, disagreements) |
 | `~/.homaruscc/journal/` | Daily reflection journal entries (indexed by memory system) |
 | `~/.homaruscc/browser-data/` | Persistent browser sessions |
-| `crm/` | CRM contact files (markdown + YAML frontmatter, see `crm.example/`) |
 
 ## Event Loop
 

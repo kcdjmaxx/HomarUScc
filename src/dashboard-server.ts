@@ -134,7 +134,13 @@ export class DashboardServer {
   private setupRoutes(): void {
     // API endpoints
     this.app.get("/api/status", (_req, res) => {
-      res.json(this.loop.getStatus());
+      const status = this.loop.getStatus();
+      const compaction = this.compactionManager.getCompactionStats();
+      res.json({ ...status, compaction: { count: compaction.count, loopFailures: compaction.loopFailures, pending: !!compaction.pending } });
+    });
+
+    this.app.get("/api/compaction-stats", (_req, res) => {
+      res.json(this.compactionManager.getCompactionStats());
     });
 
     this.app.get("/api/events", (req, res) => {
@@ -166,6 +172,8 @@ export class DashboardServer {
     // Maintains a server-side delivery watermark to prevent replaying old events after compaction
     // Optional `since` query param (ms timestamp) overrides the watermark
     this.app.get("/api/wait", async (req, res) => {
+      // Mark event loop as active on first call — persists for backend lifetime
+      this.compactionManager.setEventLoopActive();
       const timeout = Math.min(parseInt(req.query.timeout as string) || 30, 120) * 1000;
       const sinceParam = req.query.since ? parseInt(req.query.since as string) : undefined;
       try {
@@ -178,10 +186,12 @@ export class DashboardServer {
           const identityPayload = needsFull
             ? { soul: identity.getSoul(), user: identity.getUser(), state: identity.getAgentState(), full: true }
             : { digest: identity.getDigest(), full: false };
+          const compactionStats = this.compactionManager.getCompactionStats();
           res.json({
             identity: identityPayload,
             events,
             cursor: this.loop.getDeliveryWatermark(),
+            compaction: { count: compactionStats.count, loopFailures: compactionStats.loopFailures },
           });
         }
       } catch {
@@ -424,7 +434,7 @@ export class DashboardServer {
     });
 
     // --- CRM CRUD (markdown files with YAML frontmatter) ---
-    const crmDir = resolve(import.meta.dirname ?? __dirname, "..", "crm");
+    const crmDir = resolve(import.meta.dirname ?? __dirname, "..", "local", "crm");
 
     interface CrmContact {
       slug: string;
@@ -590,7 +600,7 @@ export class DashboardServer {
     const allowedBases: Record<string, string> = {
       "HalShare": halShareDir,
       "~/.homaruscc": homarusccDir,
-      "crm": resolve(projectDir, "crm"),
+      "crm": resolve(projectDir, "local", "crm"),
     };
 
     this.app.get("/api/docs", (req, res) => {
