@@ -2,7 +2,7 @@
 // Dashboard server — Express + WebSocket for the web dashboard
 import { createServer, type Server as HttpServer } from "node:http";
 import { resolve, join } from "node:path";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import express from "express";
@@ -349,6 +349,271 @@ export class DashboardServer {
       const filePath = join(appsDir, req.params.slug, req.params.file);
       if (!existsSync(filePath)) { res.status(404).end(); return; }
       res.sendFile(filePath);
+    });
+
+    // --- Kanban task CRUD ---
+    const kanbanDataPath = join(appsDir, "kanban", "data.json");
+
+    const readKanban = (): { tasks: Array<Record<string, unknown>> } => {
+      if (!existsSync(kanbanDataPath)) return { tasks: [] };
+      try { return JSON.parse(readFileSync(kanbanDataPath, "utf8")); }
+      catch { return { tasks: [] }; }
+    };
+
+    const writeKanban = (data: { tasks: Array<Record<string, unknown>> }): void => {
+      const dir = join(appsDir, "kanban");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(kanbanDataPath, JSON.stringify(data, null, 2));
+    };
+
+    // Auto-flush done tasks older than 3 days
+    const flushDoneTasks = () => {
+      const data = readKanban();
+      const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+      const before = data.tasks.length;
+      data.tasks = data.tasks.filter(
+        (t) => t.status !== "done" || new Date(t.updated as string).getTime() > cutoff
+      );
+      if (data.tasks.length < before) writeKanban(data);
+      return data;
+    };
+
+    // List all tasks (auto-flushes stale done tasks)
+    this.app.get("/api/kanban/tasks", (_req, res) => {
+      res.json(flushDoneTasks().tasks);
+    });
+
+    // Create a task
+    this.app.post("/api/kanban/tasks", express.json(), (req, res) => {
+      const data = readKanban();
+      const task = {
+        id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: req.body.title ?? "Untitled",
+        description: req.body.description ?? "",
+        assignee: req.body.assignee ?? "max",
+        status: req.body.status ?? "todo",
+        created: new Date().toISOString(),
+        updated: new Date().toISOString(),
+      };
+      data.tasks.push(task);
+      writeKanban(data);
+      res.json(task);
+    });
+
+    // Update a task
+    this.app.patch("/api/kanban/tasks/:id", express.json(), (req, res) => {
+      const data = readKanban();
+      const task = data.tasks.find((t) => t.id === req.params.id);
+      if (!task) { res.status(404).json({ error: "Task not found" }); return; }
+      const { title, description, assignee, status } = req.body;
+      if (title !== undefined) task.title = title;
+      if (description !== undefined) task.description = description;
+      if (assignee !== undefined) task.assignee = assignee;
+      if (status !== undefined) task.status = status;
+      task.updated = new Date().toISOString();
+      writeKanban(data);
+      res.json(task);
+    });
+
+    // Delete a task
+    this.app.delete("/api/kanban/tasks/:id", (req, res) => {
+      const data = readKanban();
+      data.tasks = data.tasks.filter((t) => t.id !== req.params.id);
+      writeKanban(data);
+      res.json({ ok: true });
+    });
+
+    // --- CRM CRUD (markdown files with YAML frontmatter) ---
+    const crmDir = resolve(import.meta.dirname ?? __dirname, "..", "crm");
+
+    interface CrmContact {
+      slug: string;
+      name: string;
+      aliases: string[];
+      email?: string;
+      phone?: string;
+      social?: Record<string, string>;
+      tags: string[];
+      connections: Array<{ name: string; relationship: string }>;
+      context: string;
+      source: string;
+      lastMentioned: string;
+      created: string;
+      notes: string;
+    }
+
+    const parseCrmFile = (slug: string, content: string): CrmContact => {
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+      if (!fmMatch) return { slug, name: slug, aliases: [], tags: [], connections: [], context: "", source: "manual", lastMentioned: new Date().toISOString().slice(0, 10), created: new Date().toISOString().slice(0, 10), notes: content };
+      const fm: Record<string, unknown> = {};
+      for (const line of fmMatch[1].split("\n")) {
+        const colonIdx = line.indexOf(":");
+        if (colonIdx === -1) continue;
+        const key = line.slice(0, colonIdx).trim();
+        let val = line.slice(colonIdx + 1).trim();
+        if (val.startsWith("[") && val.endsWith("]")) {
+          try { fm[key] = JSON.parse(val); } catch { fm[key] = val; }
+        } else {
+          fm[key] = val;
+        }
+      }
+      // Parse connections from YAML array format
+      const connections: Array<{ name: string; relationship: string }> = [];
+      if (Array.isArray(fm.connections)) {
+        for (const c of fm.connections) {
+          if (typeof c === "object" && c !== null) connections.push(c as { name: string; relationship: string });
+        }
+      }
+      return {
+        slug,
+        name: (fm.name as string) ?? slug,
+        aliases: Array.isArray(fm.aliases) ? fm.aliases as string[] : [],
+        email: fm.email as string | undefined,
+        phone: fm.phone as string | undefined,
+        social: fm.social as Record<string, string> | undefined,
+        tags: Array.isArray(fm.tags) ? fm.tags as string[] : [],
+        connections,
+        context: (fm.context as string) ?? "",
+        source: (fm.source as string) ?? "manual",
+        lastMentioned: (fm.lastMentioned as string) ?? new Date().toISOString().slice(0, 10),
+        created: (fm.created as string) ?? new Date().toISOString().slice(0, 10),
+        notes: fmMatch[2].trim(),
+      };
+    };
+
+    const contactToMarkdown = (c: Omit<CrmContact, "slug">): string => {
+      const lines = [
+        "---",
+        `name: ${c.name}`,
+        `aliases: ${JSON.stringify(c.aliases ?? [])}`,
+      ];
+      if (c.email) lines.push(`email: ${c.email}`);
+      if (c.phone) lines.push(`phone: ${c.phone}`);
+      if (c.social) lines.push(`social: ${JSON.stringify(c.social)}`);
+      lines.push(`tags: ${JSON.stringify(c.tags ?? [])}`);
+      if (c.connections?.length) {
+        lines.push(`connections: ${JSON.stringify(c.connections)}`);
+      } else {
+        lines.push("connections: []");
+      }
+      lines.push(`context: ${c.context ?? ""}`);
+      lines.push(`source: ${c.source ?? "manual"}`);
+      lines.push(`lastMentioned: ${c.lastMentioned ?? new Date().toISOString().slice(0, 10)}`);
+      lines.push(`created: ${c.created ?? new Date().toISOString().slice(0, 10)}`);
+      lines.push("---");
+      if (c.notes) lines.push("", c.notes);
+      return lines.join("\n") + "\n";
+    };
+
+    const slugify = (name: string): string =>
+      name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    // List all contacts
+    this.app.get("/api/crm/contacts", (_req, res) => {
+      if (!existsSync(crmDir)) { res.json([]); return; }
+      const contacts: CrmContact[] = [];
+      for (const file of readdirSync(crmDir)) {
+        if (!file.endsWith(".md")) continue;
+        try {
+          const content = readFileSync(join(crmDir, file), "utf8");
+          contacts.push(parseCrmFile(file.replace(/\.md$/, ""), content));
+        } catch { /* skip */ }
+      }
+      contacts.sort((a, b) => b.lastMentioned.localeCompare(a.lastMentioned));
+      res.json(contacts);
+    });
+
+    // Get single contact
+    this.app.get("/api/crm/contacts/:slug", (req, res) => {
+      const filePath = join(crmDir, `${req.params.slug}.md`);
+      if (!existsSync(filePath)) { res.status(404).json({ error: "Contact not found" }); return; }
+      const content = readFileSync(filePath, "utf8");
+      res.json(parseCrmFile(req.params.slug, content));
+    });
+
+    // Create contact
+    this.app.post("/api/crm/contacts", express.json(), (req, res) => {
+      if (!existsSync(crmDir)) mkdirSync(crmDir, { recursive: true });
+      const body = req.body as Partial<CrmContact>;
+      if (!body.name) { res.status(400).json({ error: "Name required" }); return; }
+      const slug = slugify(body.name);
+      const filePath = join(crmDir, `${slug}.md`);
+      const contact: CrmContact = {
+        slug,
+        name: body.name,
+        aliases: body.aliases ?? [],
+        email: body.email,
+        phone: body.phone,
+        social: body.social,
+        tags: body.tags ?? [],
+        connections: body.connections ?? [],
+        context: body.context ?? "",
+        source: body.source ?? "manual",
+        lastMentioned: new Date().toISOString().slice(0, 10),
+        created: new Date().toISOString().slice(0, 10),
+        notes: body.notes ?? "",
+      };
+      writeFileSync(filePath, contactToMarkdown(contact));
+      res.json(contact);
+    });
+
+    // Update contact
+    this.app.patch("/api/crm/contacts/:slug", express.json(), (req, res) => {
+      const filePath = join(crmDir, `${req.params.slug}.md`);
+      if (!existsSync(filePath)) { res.status(404).json({ error: "Contact not found" }); return; }
+      const existing = parseCrmFile(req.params.slug, readFileSync(filePath, "utf8"));
+      const body = req.body as Partial<CrmContact>;
+      const updated = { ...existing, ...body, slug: existing.slug };
+      writeFileSync(filePath, contactToMarkdown(updated));
+      // If name changed, rename the file
+      if (body.name && slugify(body.name) !== existing.slug) {
+        const newSlug = slugify(body.name);
+        const newPath = join(crmDir, `${newSlug}.md`);
+        renameSync(filePath, newPath);
+        updated.slug = newSlug;
+      }
+      res.json(updated);
+    });
+
+    // Delete contact
+    this.app.delete("/api/crm/contacts/:slug", (req, res) => {
+      const filePath = join(crmDir, `${req.params.slug}.md`);
+      if (existsSync(filePath)) unlinkSync(filePath);
+      res.json({ ok: true });
+    });
+
+    // --- Document viewer endpoint ---
+    // Serves markdown files from allowed base directories
+    const projectDir = resolve(import.meta.dirname ?? __dirname, "..");
+    const halShareDir = resolve(projectDir, "../HalShare");
+    const homarusccDir = join(homedir(), ".homaruscc");
+    const allowedBases: Record<string, string> = {
+      "HalShare": halShareDir,
+      "~/.homaruscc": homarusccDir,
+      "crm": resolve(projectDir, "crm"),
+    };
+
+    this.app.get("/api/docs", (req, res) => {
+      const filePath = req.query.path as string;
+      if (!filePath) { res.status(400).json({ error: "path required" }); return; }
+
+      // Resolve against allowed bases
+      let resolved: string | null = null;
+      for (const [prefix, base] of Object.entries(allowedBases)) {
+        if (filePath.startsWith(prefix + "/") || filePath.startsWith(prefix + "\\")) {
+          const relative = filePath.slice(prefix.length + 1);
+          const full = resolve(base, relative);
+          // Prevent directory traversal
+          if (full.startsWith(base)) { resolved = full; break; }
+        }
+      }
+
+      if (!resolved || !existsSync(resolved)) {
+        res.status(404).json({ error: "Document not found" });
+        return;
+      }
+
+      res.type("text/markdown").send(readFileSync(resolved, "utf8"));
     });
 
     // Serve built dashboard in production

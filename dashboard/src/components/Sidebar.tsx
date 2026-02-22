@@ -1,5 +1,5 @@
 // CRC: crc-DashboardFrontend.md
-type View = "chat" | "events" | "status" | "memory" | "apps";
+type View = "chat" | "events" | "status" | "memory" | "apps" | "kanban" | "crm";
 
 interface Props {
   view: View;
@@ -14,6 +14,8 @@ const items: Array<{ id: View; label: string; icon: string }> = [
   { id: "events", label: "Events", icon: "#" },
   { id: "status", label: "Status", icon: "~" },
   { id: "memory", label: "Memory", icon: "@" },
+  { id: "kanban", label: "Kanban", icon: "=" },
+  { id: "crm", label: "People", icon: "&" },
   { id: "apps", label: "Apps", icon: "+" },
 ];
 

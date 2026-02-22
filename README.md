@@ -155,6 +155,7 @@ Restart Claude Code. HomarUScc's tools will appear automatically. The proxy auto
 | `telegram_send` | Send a message to a Telegram chat |
 | `telegram_read` | Read recent incoming messages |
 | `telegram_typing` | Send a typing indicator |
+| `telegram_react` | React to a message with an emoji |
 | `memory_search` | Hybrid vector + full-text search over stored content |
 | `memory_store` | Store and index content for later retrieval |
 | `timer_schedule` | Schedule cron, interval, or one-shot timers |
@@ -190,6 +191,8 @@ When enabled, the dashboard runs on `http://localhost:3120` with:
 - Real-time event log via WebSocket
 - System status panel
 - Memory search browser
+- CRM (People) — markdown-based contact manager with search, tags, connections, and linked document viewer
+- Kanban — task board synced with the agent's task system
 
 The dashboard is responsive — on mobile devices the sidebar collapses into a hamburger menu. Accessible remotely over Tailscale at `http://<your-tailscale-ip>:3120`.
 
@@ -226,6 +229,7 @@ HomarUScc creates runtime data that's gitignored and stays local:
 | `~/.homaruscc/identity/` | Agent identity files (soul, user, state, preferences, disagreements) |
 | `~/.homaruscc/journal/` | Daily reflection journal entries (indexed by memory system) |
 | `~/.homaruscc/browser-data/` | Persistent browser sessions |
+| `crm/` | CRM contact files (markdown + YAML frontmatter, see `crm.example/`) |
 
 ## Event Loop
 
@@ -248,7 +252,7 @@ The `PreCompact` hook sets a flag on the backend. The next `/api/wait` response 
 
 Claude Code compresses conversation history when the context window fills up. Without mitigation, the post-compaction agent loses track of what it was doing. HomarUScc handles this with two mechanisms:
 
-**Session checkpoint** — Before compaction, the agent saves its current task context (topic, recent decisions, in-progress work, modified files) to `~/.homaruscc/checkpoint.json` via `POST /api/checkpoint`. After compaction, the post-compact context injection includes this checkpoint so the new instance knows exactly where things left off. The checkpoint is cleared at session end.
+**Session checkpoint** — Before compaction, the agent saves its current task context (topic, recent decisions, in-progress work, modified files, session texture, highlight snippets) to `~/.homaruscc/checkpoint.json` via `POST /api/checkpoint`. After compaction, the post-compact context injection includes this checkpoint so the new instance knows exactly where things left off. The checkpoint is cleared at session end. The `texture` field captures the session's conversational dynamic (e.g., "rapid shipping, playful, terse messages") and `highlights` preserves 2-3 raw exchange snippets that exemplify the vibe — restoring not just _what_ was happening but _how_ it felt.
 
 **Delivery watermark** — The server tracks the timestamp of the last event delivered to Claude Code. After compaction, the event loop resumes from the watermark instead of replaying old events. This prevents the "bad loop" problem where a post-compaction agent re-handles messages it already responded to.
 
@@ -300,7 +304,7 @@ Key source files:
 | `src/mcp-tools.ts` | MCP tool definitions |
 | `src/mcp-resources.ts` | MCP resource definitions |
 | `src/config.ts` | Config loader with env var resolution and hot-reload |
-| `src/telegram-adapter.ts` | Telegram long-polling adapter (text, photos, documents) |
+| `src/telegram-adapter.ts` | Telegram long-polling adapter (text, photos, documents, reactions, edits) |
 | `src/dashboard-server.ts` | Express + WebSocket dashboard server |
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search with dream-aware scoring |

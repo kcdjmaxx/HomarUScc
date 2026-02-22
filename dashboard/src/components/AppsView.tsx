@@ -9,6 +9,9 @@ interface AppManifest {
   icon?: string;
 }
 
+// Apps that have dedicated sidebar views — hide from generic list
+const DEDICATED_VIEWS = new Set(["kanban"]);
+
 const apiBase = `http://${window.location.hostname}:${window.location.port || 3120}`;
 
 export function AppsView() {
@@ -19,7 +22,7 @@ export function AppsView() {
   useEffect(() => {
     fetch(`${apiBase}/api/apps`)
       .then((r) => r.json())
-      .then(setApps)
+      .then((all: AppManifest[]) => setApps(all.filter((a) => !DEDICATED_VIEWS.has(a.slug))))
       .catch(() => {});
   }, []);
 
@@ -140,7 +143,7 @@ const styles = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: 16,
   },
   card: {

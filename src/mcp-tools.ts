@@ -91,6 +91,34 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- telegram_react ---
+  tools.push({
+    name: "telegram_react",
+    description: "React to a Telegram message with an emoji. Use for lightweight acknowledgment instead of sending a full reply.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chatId: { type: "string", description: "Telegram chat ID" },
+        messageId: { type: "number", description: "Message ID to react to" },
+        emoji: { type: "string", description: "Emoji to react with (e.g. 👍, ❤️, 🔥, 😂, 🤔, 👎)" },
+      },
+      required: ["chatId", "messageId", "emoji"],
+    },
+    async handler(params) {
+      const { chatId, messageId, emoji } = params as { chatId: string; messageId: number; emoji: string };
+      const adapter = loop.getChannelManager().getAdapter("telegram") as TelegramChannelAdapter | undefined;
+      if (!adapter) {
+        return { content: [{ type: "text", text: "Telegram not configured" }] };
+      }
+      try {
+        await adapter.setReaction(chatId, messageId, emoji);
+        return { content: [{ type: "text", text: `Reacted with ${emoji} on message ${messageId}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
   // --- memory_search ---
   tools.push({
     name: "memory_search",

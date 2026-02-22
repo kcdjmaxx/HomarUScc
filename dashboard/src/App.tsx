@@ -7,8 +7,10 @@ import { EventLog } from "./components/EventLog";
 import { StatusPanel } from "./components/StatusPanel";
 import { MemoryBrowser } from "./components/MemoryBrowser";
 import { AppsView } from "./components/AppsView";
+import { KanbanView } from "./components/KanbanView";
+import { CrmView } from "./components/CrmView";
 
-type View = "chat" | "events" | "status" | "memory" | "apps";
+type View = "chat" | "events" | "status" | "memory" | "apps" | "kanban" | "crm";
 
 const wsUrl = `ws://${window.location.hostname}:${window.location.port || 3120}`;
 
@@ -71,6 +73,8 @@ export function App() {
         {view === "status" && <StatusPanel messages={messages} send={send} />}
         {view === "memory" && <MemoryBrowser send={send} messages={messages} />}
         {view === "apps" && <AppsView />}
+        {view === "kanban" && <KanbanView />}
+        {view === "crm" && <CrmView messages={messages} send={send} />}
       </main>
     </div>
   );

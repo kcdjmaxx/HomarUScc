@@ -58,9 +58,26 @@ interface TelegramMessage {
   document?: TelegramDocument;
 }
 
+interface TelegramReactionType {
+  type: "emoji" | "custom_emoji";
+  emoji?: string;
+  custom_emoji_id?: string;
+}
+
+interface TelegramMessageReactionUpdated {
+  chat: TelegramChat;
+  message_id: number;
+  user?: TelegramUser;
+  date: number;
+  old_reaction: TelegramReactionType[];
+  new_reaction: TelegramReactionType[];
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+  message_reaction?: TelegramMessageReactionUpdated;
 }
 
 interface TelegramResponse<T> {
@@ -178,6 +195,14 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     await this.apiCall("sendChatAction", { chat_id: chatId, action: "typing" });
   }
 
+  async setReaction(chatId: string, messageId: number, emoji: string): Promise<void> {
+    await this.apiCall("setMessageReaction", {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: "emoji", emoji }],
+    });
+  }
+
   // homaruscc addition: get recent messages for MCP tool
   getRecentMessages(limit = 20): Array<{ from: string; text: string; chatId: string; timestamp: number }> {
     return this.recentMessages.slice(-limit);
@@ -195,6 +220,7 @@ export class TelegramChannelAdapter extends ChannelAdapter {
       const updates = await this.apiCall<TelegramUpdate[]>("getUpdates", {
         offset: this.offset,
         timeout: POLL_TIMEOUT,
+        allowed_updates: ["message", "edited_message", "message_reaction"],
       });
 
       this.lastPollOk = true;
@@ -205,6 +231,10 @@ export class TelegramChannelAdapter extends ChannelAdapter {
         this.offset = update.update_id + 1;
         if (update.message) {
           this.handleMessage(update.message);
+        } else if (update.edited_message) {
+          this.handleEditedMessage(update.edited_message);
+        } else if (update.message_reaction) {
+          this.handleReaction(update.message_reaction);
         }
       }
 
@@ -265,6 +295,60 @@ export class TelegramChannelAdapter extends ChannelAdapter {
       replyTo: String(msg.message_id),
       raw: msg,
     }, String(msg.chat.id));
+  }
+
+  private handleEditedMessage(msg: TelegramMessage): void {
+    if (!msg.text) return;
+    if (this.allowedChatIds.size > 0 && !this.allowedChatIds.has(msg.chat.id)) return;
+
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+    const isMention = this.detectMention(msg);
+    const text = isMention ? this.stripMention(msg.text) : msg.text;
+    const chatId = String(msg.chat.id);
+
+    this.sendTyping(chatId).catch(() => {});
+
+    this.deliverWithTarget({
+      from: msg.from?.username ?? String(msg.from?.id ?? "unknown"),
+      channel: "telegram",
+      text: `[edited message ${msg.message_id}] ${text}`,
+      isGroup,
+      isMention,
+      replyTo: String(msg.message_id),
+      raw: { ...msg, isEdit: true },
+    }, chatId);
+  }
+
+  private handleReaction(reaction: TelegramMessageReactionUpdated): void {
+    if (this.allowedChatIds.size > 0 && !this.allowedChatIds.has(reaction.chat.id)) {
+      return;
+    }
+
+    // Extract the new emojis (what was just added)
+    const newEmojis = reaction.new_reaction
+      .filter((r) => r.type === "emoji" && r.emoji)
+      .map((r) => r.emoji!);
+
+    const oldEmojis = reaction.old_reaction
+      .filter((r) => r.type === "emoji" && r.emoji)
+      .map((r) => r.emoji!);
+
+    // Only fire events for newly added reactions (not removals)
+    const added = newEmojis.filter((e) => !oldEmojis.includes(e));
+    if (added.length === 0) return;
+
+    const from = reaction.user?.username ?? String(reaction.user?.id ?? "unknown");
+    const chatId = String(reaction.chat.id);
+
+    this.deliverWithTarget({
+      from,
+      channel: "telegram",
+      text: `[reaction: ${added.join(" ")} on message ${reaction.message_id}]`,
+      isGroup: reaction.chat.type !== "private",
+      isMention: false,
+      replyTo: String(reaction.message_id),
+      raw: reaction,
+    }, chatId);
   }
 
   private async handleMediaMessage(msg: TelegramMessage): Promise<void> {

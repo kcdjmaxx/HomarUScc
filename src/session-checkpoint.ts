@@ -9,11 +9,14 @@ export interface CheckpointData {
   inProgressTask?: string;
   recentMessages?: string[];
   modifiedFiles?: string[];
+  texture?: string;        // Freeform session vibe, e.g. "rapid shipping, playful, terse messages"
+  highlights?: string[];   // 2-3 raw exchange snippets that exemplify the session dynamic
   timestamp?: number;
 }
 
 const MAX_DECISIONS = 10;
 const MAX_MESSAGES = 5;
+const MAX_HIGHLIGHTS = 3;
 
 export class SessionCheckpoint {
   private data: CheckpointData | null = null;
@@ -40,6 +43,13 @@ export class SessionCheckpoint {
     if (partial.recentMessages) {
       this.data.recentMessages = [...(this.data.recentMessages ?? []), ...partial.recentMessages]
         .slice(-MAX_MESSAGES);
+    }
+
+    if (partial.texture !== undefined) this.data.texture = partial.texture;
+
+    if (partial.highlights) {
+      this.data.highlights = [...(this.data.highlights ?? []), ...partial.highlights]
+        .slice(-MAX_HIGHLIGHTS);
     }
 
     this.data.timestamp = Date.now();
@@ -88,6 +98,13 @@ export class SessionCheckpoint {
     if (d.recentMessages?.length) {
       lines.push("Recent messages:");
       for (const msg of d.recentMessages) lines.push(`  - ${msg}`);
+    }
+
+    if (d.texture) lines.push(`Session texture: ${d.texture}`);
+
+    if (d.highlights?.length) {
+      lines.push("Texture highlights:");
+      for (const h of d.highlights) lines.push(`  > ${h}`);
     }
 
     if (d.modifiedFiles?.length) lines.push(`Modified files: ${d.modifiedFiles.join(", ")}`);
