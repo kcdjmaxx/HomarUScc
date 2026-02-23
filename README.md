@@ -2,6 +2,8 @@
 
 **An MCP server that gives Claude Code a body** — messaging, memory, identity, timers, browser automation, and tools. Claude Code is the brain. HomarUScc is the nervous system.
 
+[kcdjmaxx.com/homaruscc](https://kcdjmaxx.com/homaruscc/)
+
 Most MCP servers add capabilities. HomarUScc adds _continuity_. It gives the agent persistent identity (who it is across sessions), evolving memory (what it's learned), and zero-token idle (it costs nothing when nobody's talking to it). The agent wakes on events, reasons, responds, reflects, and goes back to sleep.
 
 The result is an agent that remembers yesterday's conversation, carries forward its own preferences and opinions, writes a daily journal, dreams overnight, and can modify its own personality file as it develops. Not a chatbot that resets every session — a persistent presence that grows over time.
