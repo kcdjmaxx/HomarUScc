@@ -123,4 +123,9 @@ export class TranscriptLogger {
   getBufferSize(): number {
     return this.buffer.length;
   }
+
+  /** Return the last N turns from the in-memory buffer (not yet flushed to disk). */
+  getRecentTurns(n: number): TranscriptTurn[] {
+    return this.buffer.slice(-n);
+  }
 }

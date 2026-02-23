@@ -1,9 +1,12 @@
 {
   "name": "homaruscc",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server that gives Claude Code a body — messaging, memory, identity, timers, browser automation, and dreams",
   "type": "module",
   "main": "dist/mcp-proxy.js",
+  "bin": {
+    "homaruscc": "dist/cli.js"
+  },
   "files": [
     "dist/",
     "dashboard/dist/",

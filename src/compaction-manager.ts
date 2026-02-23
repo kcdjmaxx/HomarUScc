@@ -66,15 +66,37 @@ export class CompactionManager {
       .map((e) => `[${e.type}] ${e.source}: ${JSON.stringify(e.payload).slice(0, 100)}`)
       .join("\n");
 
-    // R128: Save checkpoint before compaction
+    // R128: Save checkpoint before compaction — auto-capture texture from transcript
     const checkpoint = this.loop.getSessionCheckpoint();
+    const transcriptLogger = this.loop.getTranscriptLogger();
+    if (transcriptLogger) {
+      const recentTurns = transcriptLogger.getRecentTurns(8);
+      if (recentTurns.length > 0) {
+        const highlights = recentTurns.map((t) => {
+          const dir = t.direction === "in" ? `${t.sender ?? "user"}` : "caul";
+          return `[${dir}] ${t.text.slice(0, 200)}`;
+        });
+        checkpoint.update({ highlights });
+      }
+    }
     checkpoint.update({ modifiedFiles: [] }); // trigger timestamp update
 
     const lines = [
-      "IMPORTANT: Context compaction is about to occur. Save any important session state to memory NOW.",
-      "Use the memory_store tool to persist anything valuable from this session that hasn't been saved yet.",
+      "IMPORTANT: Context compaction is about to occur. Save session state NOW.",
       "",
-      "What to save:",
+      "TEXTURE PRESERVATION — do these FIRST (they only take a moment):",
+      "",
+      '1. **Felt-like micro-journal**: POST to /api/checkpoint with a `texture` field — one paragraph, first person,',
+      "   describing the *subjective quality* of this session. Not what happened, but how it felt.",
+      '   Example: "We were shoulder-to-shoulder in the API docs, converging from different angles."',
+      "",
+      "2. **Anchor phrases**: POST to /api/checkpoint with `anchorPhrases` — 2-3 verbatim user quotes that carried",
+      '   emotional or relational weight. The exact words matter more than any summary.',
+      '   Example: ["I want you to have this for yourself", "go for it"]',
+      "",
+      "Recent exchange highlights have been auto-captured from the transcript buffer.",
+      "",
+      "Then save anything else valuable:",
       "- Decisions made during this session",
       "- Task progress and current status",
       "- Important observations or findings",
@@ -159,7 +181,7 @@ export class CompactionManager {
     const checkpoint = this.loop.getSessionCheckpoint();
     const checkpointText = checkpoint.toContextString();
     if (checkpointText) {
-      lines.push("", "--- Session Checkpoint (what you were doing before compaction) ---", checkpointText);
+      lines.push("", "--- Session Checkpoint (what you were doing + how it felt) ---", checkpointText);
     }
 
     // Include active agents

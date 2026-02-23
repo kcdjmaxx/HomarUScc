@@ -9,14 +9,16 @@ export interface CheckpointData {
   inProgressTask?: string;
   recentMessages?: string[];
   modifiedFiles?: string[];
-  texture?: string;        // Freeform session vibe, e.g. "rapid shipping, playful, terse messages"
-  highlights?: string[];   // 2-3 raw exchange snippets that exemplify the session dynamic
+  texture?: string;           // "Felt like" micro-journal — first-person subjective session quality
+  highlights?: string[];      // 2-3 raw exchange snippets that exemplify the session dynamic
+  anchorPhrases?: string[];   // Verbatim user quotes that carry emotional/relational weight
   timestamp?: number;
 }
 
 const MAX_DECISIONS = 10;
 const MAX_MESSAGES = 5;
-const MAX_HIGHLIGHTS = 3;
+const MAX_HIGHLIGHTS = 5;
+const MAX_ANCHORS = 5;
 
 export class SessionCheckpoint {
   private data: CheckpointData | null = null;
@@ -50,6 +52,11 @@ export class SessionCheckpoint {
     if (partial.highlights) {
       this.data.highlights = [...(this.data.highlights ?? []), ...partial.highlights]
         .slice(-MAX_HIGHLIGHTS);
+    }
+
+    if (partial.anchorPhrases) {
+      this.data.anchorPhrases = [...(this.data.anchorPhrases ?? []), ...partial.anchorPhrases]
+        .slice(-MAX_ANCHORS);
     }
 
     this.data.timestamp = Date.now();
@@ -102,8 +109,13 @@ export class SessionCheckpoint {
 
     if (d.texture) lines.push(`Session texture: ${d.texture}`);
 
+    if (d.anchorPhrases?.length) {
+      lines.push("Anchor phrases (verbatim user quotes that mattered):");
+      for (const a of d.anchorPhrases) lines.push(`  "${a}"`);
+    }
+
     if (d.highlights?.length) {
-      lines.push("Texture highlights:");
+      lines.push("Raw exchange highlights:");
       for (const h of d.highlights) lines.push(`  > ${h}`);
     }
 

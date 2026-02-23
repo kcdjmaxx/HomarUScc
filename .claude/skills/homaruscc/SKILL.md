@@ -123,9 +123,9 @@ After handling any event, briefly ask yourself two questions:
 
 If yes, store it immediately:
 ```
-memory_store: key="user/preferences/<topic>", content="<what you learned>"
-memory_store: key="user/patterns/<pattern>", content="<what you observed>"
-memory_store: key="user/corrections/<topic>", content="<what the user corrected>"
+memory_store: key="local/user/preferences/<topic>", content="<what you learned>"
+memory_store: key="local/user/patterns/<pattern>", content="<what you observed>"
+memory_store: key="local/user/corrections/<topic>", content="<what the user corrected>"
 ```
 
 **2. About yourself:** "Did I learn something about how I work — a preference, a mistake pattern, a conviction?"
@@ -213,7 +213,7 @@ When the session is ending (user says goodbye, context is getting heavy, or you'
 
 ### Dream-origin awareness
 
-When `memory_search` returns results with paths starting with `dreams/`, these are fragments from overnight dream cycles. When referencing dream-origin content in waking interactions, explicitly note it: "This came up in an overnight dream cycle..." Don't hide the dream origin — it's part of how the personality system works.
+When `memory_search` returns results with paths starting with `dreams/` or `local/dreams/`, these are fragments from overnight dream cycles. When referencing dream-origin content in waking interactions, explicitly note it: "This came up in an overnight dream cycle..." Don't hide the dream origin — it's part of how the personality system works.
 
 Dream content is stored at 0.5x weight and decays with a 7-day half-life, so it surfaces subtly and fades quickly. If a dream fragment is relevant to a conversation, that's worth mentioning.
 
@@ -223,10 +223,10 @@ Store user-learning memories under these prefixes:
 
 | Prefix | What goes here | Example key |
 |--------|---------------|-------------|
-| `user/preferences/` | How the user likes things done | `user/preferences/communication-style` |
-| `user/patterns/` | Recurring behaviors and routines | `user/patterns/monday-morning-routine` |
-| `user/corrections/` | Things the user explicitly corrected | `user/corrections/no-emojis` |
-| `user/context/` | Background facts about the user | `user/context/projects` |
+| `local/user/preferences/` | How the user likes things done | `local/user/preferences/communication-style` |
+| `local/user/patterns/` | Recurring behaviors and routines | `local/user/patterns/monday-morning-routine` |
+| `local/user/corrections/` | Things the user explicitly corrected | `local/user/corrections/no-emojis` |
+| `local/user/context/` | Background facts about the user | `local/user/context/projects` |
 
 These prefixes make it easy to search for specific types of knowledge: `memory_search: query="user preferences"` returns all learned preferences.
 

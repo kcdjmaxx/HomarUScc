@@ -3,11 +3,6 @@ refs/
 specs/
 design/
 
-# Examples and templates (users get these from GitHub, not npm)
-identity.example/
-*.example.md
-*.example.json
-
 # Development files
 src/
 dashboard/

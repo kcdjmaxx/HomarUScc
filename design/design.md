@@ -80,13 +80,13 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [ ] seq-apps-load.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/AppShell.tsx`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`
 
 ### On Birth (First-Run Wizard)
-- [ ] crc-Cli.md → `src/cli.ts`
-- [ ] crc-Wizard.md → `src/wizard.ts`
-- [ ] crc-Scaffolder.md → `src/scaffolder.ts`
-- [ ] crc-ClaudeCodeRegistrar.md → `src/claude-code-registrar.ts`
-- [ ] crc-NpmPackage.md → `package.json`, `.npmignore`
-- [ ] seq-first-run.md → `src/cli.ts`, `src/wizard.ts`, `src/scaffolder.ts`, `src/claude-code-registrar.ts`
-- [ ] seq-normal-start.md → `src/cli.ts`
+- [x] crc-Cli.md → `src/cli.ts`
+- [x] crc-Wizard.md → `src/wizard.ts`
+- [x] crc-Scaffolder.md → `src/scaffolder.ts`
+- [x] crc-ClaudeCodeRegistrar.md → `src/claude-code-registrar.ts`
+- [x] crc-NpmPackage.md → `package.json`, `.npmignore`
+- [x] seq-first-run.md → `src/cli.ts`, `src/wizard.ts`, `src/scaffolder.ts`, `src/claude-code-registrar.ts`
+- [x] seq-normal-start.md → `src/cli.ts`
 - [ ] test-Scaffolder.md → `src/__tests__/scaffolder.test.ts`
 - [ ] test-ClaudeCodeRegistrar.md → `src/__tests__/claude-code-registrar.test.ts`
 

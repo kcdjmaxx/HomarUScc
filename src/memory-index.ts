@@ -33,7 +33,7 @@ interface Chunk {
 // R82-R89: Temporal decay on search results
 // R115-R117, R123: Dream-aware scoring
 const DEFAULT_EVERGREEN_PATTERNS = ["MEMORY.md", "SOUL.md", "USER.md"];
-const DEFAULT_DREAM_PATTERNS = ["dreams/"];
+const DEFAULT_DREAM_PATTERNS = ["dreams/", "local/dreams/"];
 const MS_PER_DAY = 86_400_000;
 
 export class MemoryIndex {
