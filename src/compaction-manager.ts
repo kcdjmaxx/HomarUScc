@@ -1,6 +1,9 @@
 // CRC: crc-CompactionManager.md | Seq: seq-compaction-flush.md
 // Auto-flush before context compaction — from HomarUS
 import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { homedir } from "node:os";
 import type { Logger } from "./types.js";
 import type { HomarUScc } from "./homaruscc.js";
 
@@ -16,10 +19,11 @@ export class CompactionManager {
   private logger: Logger;
   private loop: HomarUScc;
 
-  // Compaction debug counter
+  // Compaction debug counter — persisted across backend restarts
   private compactionCount = 0;
   private compactionHistory: CompactionRecord[] = [];
   private pendingCompaction: CompactionRecord | null = null;
+  private static readonly COUNTER_FILE = join(homedir(), ".homaruscc", "compaction-count.json");
 
   // Event loop tracking — set true on first /api/wait call, stays true forever
   private eventLoopActive = false;
@@ -27,6 +31,25 @@ export class CompactionManager {
   constructor(loop: HomarUScc, logger: Logger) {
     this.loop = loop;
     this.logger = logger;
+    this.compactionCount = this.loadCount();
+  }
+
+  private loadCount(): number {
+    try {
+      const data = JSON.parse(readFileSync(CompactionManager.COUNTER_FILE, "utf-8"));
+      return typeof data.count === "number" ? data.count : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private saveCount(): void {
+    try {
+      mkdirSync(dirname(CompactionManager.COUNTER_FILE), { recursive: true });
+      writeFileSync(CompactionManager.COUNTER_FILE, JSON.stringify({ count: this.compactionCount }));
+    } catch (err) {
+      this.logger.warn("Failed to persist compaction count", { error: String(err) });
+    }
   }
 
   handlePreCompact(): string {
@@ -41,6 +64,7 @@ export class CompactionManager {
 
     // Track compaction for debugging loop failures
     this.compactionCount++;
+    this.saveCount();
     this.pendingCompaction = { timestamp: this.lastFlushTimestamp, loopRestarted: false };
     this.logger.info(`Compaction #${this.compactionCount} at ${new Date(this.lastFlushTimestamp).toISOString()}`);
 
