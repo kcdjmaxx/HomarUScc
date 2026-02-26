@@ -125,6 +125,11 @@ export interface ConfigData {
   browser?: BrowserConfig;
   toolPolicies?: ToolPolicyConfig[];
   agents?: AgentsConfig;
+  spaces?: SpacesConfig;
+}
+
+export interface SpacesConfig {
+  path?: string;
 }
 
 export interface AgentsConfig {

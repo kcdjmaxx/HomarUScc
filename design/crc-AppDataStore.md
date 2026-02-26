@@ -2,7 +2,7 @@
 **Requirements:** R191, R192, R193, R194, R195, R196, R209, R189, R190
 
 ## Knows
-- appsDir: string — root directory for apps (same as AppRegistry)
+- appsDir: string -- root directory for apps (same as AppRegistry)
 
 ## Does
 - read(slug): read and parse `~/.homaruscc/apps/{slug}/data.json`, return parsed JSON object; return empty object if file does not exist (R191, R194)
@@ -13,6 +13,7 @@
 ## Collaborators
 - AppRegistry: resolves slug to manifest, validates hook existence
 - MCP tool (app_invoke): calls invoke() with slug, hook, params
+- DashboardServer: provides PUT /api/apps/:slug/data and GET /api/apps/:slug/data endpoints
 
 ## Sequences
 - seq-apps-invoke.md

@@ -1,40 +1,38 @@
 # Sequence: Frontend App Loading
-**Requirements:** R185, R188, R199, R200, R210
+**Requirements:** R185, R188, R200, R210, R416
 
 ```
-User            Sidebar          App.tsx         AppsView         DashboardServer
- |                |                |                |                   |
- |-- click Apps ->|                |                |                   |
- |                |-- setView ---->|                |                   |
- |                |   ("apps")     |                |                   |
- |                |                |-- render ----->|                   |
- |                |                |                |                   |
- |                |                |                |-- GET /api/apps ->|
- |                |                |                |<-- [{name,slug}]--|
- |                |                |                |                   |
- |                |                |   [no apps]    |                   |
- |                |                |                |-- render empty    |
- |                |                |                |   state (R210)    |
- |                |                |                |                   |
- |                |                |   [has apps]   |                   |
- |                |                |                |-- render cards    |
- |                |                |                |                   |
- |-- click app -->|                |                |                   |
- |   (budget)     |                |                |                   |
- |                |-- setView ---->|                |                   |
- |                |  ("app:budget")|                |                   |
- |                |                |-- render ----->|                   |
- |                |                |   AppShell     |                   |
- |                |                |                |                   |
- |                |                |   AppShell:    |                   |
- |                |                |   GET /api/apps/budget/component ->|
- |                |                |   <-- JS module ------------------|
- |                |                |   dynamic import()                |
- |                |                |   render component                |
- |                |                |                |                   |
+User          Sidebar         App.tsx        AppsView         DashboardServer
+ |              |               |               |                   |
+ |-- click ---->|               |               |                   |
+ |  "Apps"      |-- setView -->|               |                   |
+ |              |  ("apps")    |               |                   |
+ |              |               |-- render ---->|                   |
+ |              |               |               |                   |
+ |              |               |               |-- GET /api/apps ->|
+ |              |               |               |<-- [{manifest}] --|
+ |              |               |               |                   |
+ |              |               |   [no apps]   |                   |
+ |              |               |               |-- render empty    |
+ |              |               |               |   state (R210)    |
+ |              |               |   [has apps]  |                   |
+ |              |               |               |-- render cards    |
+ |              |               |               |                   |
+ |-- click ---->|               |               |                   |
+ |  (budget)    |               |               |                   |
+ |              |               |               |-- setSelected     |
+ |              |               |               |   ("budget")      |
+ |              |               |               |                   |
+ |              |               |               |-- GET data.json ->|
+ |              |               |               |<-- {data} --------|
+ |              |               |               |                   |
+ |              |               |               |-- AppRenderer     |
+ |              |               |               |   (iframe or data)|
 ```
 
 Notes:
-- View type expands from 4 options to include "apps" (list) and "app:{slug}" (individual app)
-- App components are cached after first import — subsequent visits skip the fetch
+- AppsView is registered as a sidebar skill via registerSkill() (R416)
+- App selection is internal to AppsView (no sidebar route change)
+- Apps with index.html render in iframe; others show data.json
 - Mobile: same sidebar behavior as other views (close on selection)
+- The DEDICATED_VIEWS set filters apps that have their own sidebar views (e.g., kanban)

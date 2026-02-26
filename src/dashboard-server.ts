@@ -13,6 +13,9 @@ import type { DashboardAdapter } from "./dashboard-adapter.js";
 import { createMcpTools, type McpToolDef } from "./mcp-tools.js";
 import { createMcpResources, type McpResourceDef } from "./mcp-resources.js";
 import { CompactionManager } from "./compaction-manager.js";
+import { SpacesManager } from "./spaces-manager.js";
+import { AppRegistry } from "./app-registry.js";
+import { AppDataStore } from "./app-data-store.js";
 
 interface WsMessage {
   type: "chat" | "search" | "status" | "events";
@@ -36,6 +39,11 @@ export class DashboardServer {
   private mcpTools: McpToolDef[];
   private mcpResources: McpResourceDef[];
   private compactionManager: CompactionManager;
+  private spacesManager: SpacesManager;
+  private appRegistry: AppRegistry;
+  private appDataStore: AppDataStore;
+  private lastWaitPoll = 0;
+  private restartChatId: string | null = null;
 
   constructor(logger: Logger, port: number, loop: HomarUScc, dashboardAdapter: DashboardAdapter) {
     this.logger = logger;
@@ -45,6 +53,21 @@ export class DashboardServer {
     this.mcpTools = createMcpTools(loop);
     this.mcpResources = createMcpResources(loop);
     this.compactionManager = new CompactionManager(loop, logger);
+
+    // R305: Resolve spaces directory from config or default
+    const spacesConfig = loop.getConfig().getAll().spaces;
+    const projectDir = resolve(import.meta.dirname ?? __dirname, "..");
+    const vaultRoot = resolve(projectDir, "../..");
+    const spacesDir = spacesConfig?.path ?? join(vaultRoot, "Spaces");
+    this.spacesManager = new SpacesManager(spacesDir);
+
+    // CRC: crc-AppRegistry.md | Seq: seq-apps-startup.md
+    // R204: App directory from config or default
+    const appsConfig = loop.getConfig().getAll() as any;
+    const appsDir = appsConfig.dashboard?.apps?.directory ?? join(homedir(), ".homaruscc", "apps");
+    this.appRegistry = new AppRegistry(appsDir, logger);
+    this.appRegistry.scan();
+    this.appDataStore = new AppDataStore(appsDir, this.appRegistry);
 
     this.app = express();
     this.httpServer = createServer(this.app);
@@ -104,6 +127,7 @@ export class DashboardServer {
   }
 
   async stop(): Promise<void> {
+    this.spacesManager.stop();
     for (const client of this.clients) {
       client.close();
     }
@@ -115,6 +139,16 @@ export class DashboardServer {
         resolve();
       });
     });
+  }
+
+  // Expose SpacesManager for MCP tools
+  getSpacesManager(): SpacesManager {
+    return this.spacesManager;
+  }
+
+  // R222: Track last /api/wait call for Claude liveness detection
+  getLastWaitPoll(): number {
+    return this.lastWaitPoll;
   }
 
   // Broadcast event to all connected dashboard clients
@@ -141,6 +175,13 @@ export class DashboardServer {
 
     this.app.get("/api/compaction-stats", (_req, res) => {
       res.json(this.compactionManager.getCompactionStats());
+    });
+
+    // R408: Return dashboard.skills config map for frontend filtering
+    this.app.get("/api/config/skills", (_req, res) => {
+      const config = this.loop.getConfig().getAll();
+      const skills = (config as any).dashboard?.skills ?? {};
+      res.json(skills);
     });
 
     this.app.get("/api/events", (req, res) => {
@@ -172,6 +213,8 @@ export class DashboardServer {
     // Maintains a server-side delivery watermark to prevent replaying old events after compaction
     // Optional `since` query param (ms timestamp) overrides the watermark
     this.app.get("/api/wait", async (req, res) => {
+      // R222: Track last poll time for Claude liveness detection
+      this.lastWaitPoll = Date.now();
       // Mark event loop as active on first call — persists for backend lifetime
       this.compactionManager.setEventLoopActive();
       const timeout = Math.min(parseInt(req.query.timeout as string) || 30, 120) * 1000;
@@ -276,6 +319,32 @@ export class DashboardServer {
       res.json({ ok: true });
     });
 
+    // R221: Restart result callback — restart script POSTs here when done
+    this.app.post("/api/restart-result", express.json(), (req, res) => {
+      const { success, message } = req.body as { success: boolean; message?: string };
+      const chatId = this.restartChatId;
+      if (chatId) {
+        const text = success
+          ? `Claude Code restarted.${message ? ` ${message}` : ""}`
+          : `Restart failed: ${message ?? "unknown error"}`;
+        // Send via Telegram adapter
+        const telegram = this.loop.getChannelManager().getAdapter("telegram");
+        if (telegram) {
+          telegram.send(chatId, { text }).catch((err) => {
+            this.logger.warn("Failed to send restart result", { error: String(err) });
+          });
+        }
+        this.restartChatId = null;
+      }
+      res.json({ ok: true });
+    });
+
+    // R222: Store the chat ID for restart result callback
+    this.app.post("/api/restart-chat", express.json(), (req, res) => {
+      this.restartChatId = req.body.chatId;
+      res.json({ ok: true });
+    });
+
     this.app.get("/api/tool-list", (_req, res) => {
       res.json(this.mcpTools.map((t) => ({
         name: t.name,
@@ -323,38 +392,35 @@ export class DashboardServer {
       }
     });
 
-    // --- Apps Platform endpoints ---
-    const appsDir = join(homedir(), ".homaruscc", "apps");
+    // --- Apps Platform endpoints (CRC: crc-AppRegistry.md, crc-AppDataStore.md) ---
+    const appsDir = this.appRegistry.getAppsDir();
 
+    // R198, R207: List all registered apps
     this.app.get("/api/apps", (_req, res) => {
-      if (!existsSync(appsDir)) { res.json([]); return; }
-      const apps: unknown[] = [];
-      for (const slug of readdirSync(appsDir)) {
-        const manifestPath = join(appsDir, slug, "manifest.json");
-        if (existsSync(manifestPath)) {
-          try {
-            const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-            apps.push({ ...manifest, slug });
-          } catch { /* skip invalid manifests */ }
-        }
-      }
-      res.json(apps);
+      // Re-scan to pick up new apps since startup
+      this.appRegistry.scan();
+      res.json(this.appRegistry.getAll());
     });
 
+    // R191: Read app data
     this.app.get("/api/apps/:slug/data", (req, res) => {
-      const dataPath = join(appsDir, req.params.slug, "data.json");
-      if (!existsSync(dataPath)) { res.json({}); return; }
-      try { res.json(JSON.parse(readFileSync(dataPath, "utf8"))); }
-      catch { res.json({}); }
+      res.json(this.appDataStore.read(req.params.slug));
     });
 
+    // R192: Write app data
     this.app.put("/api/apps/:slug/data", express.json(), (req, res) => {
-      const dataPath = join(appsDir, req.params.slug, "data.json");
-      writeFileSync(dataPath, JSON.stringify(req.body, null, 2));
+      this.appDataStore.write(req.params.slug, req.body);
       res.json({ ok: true });
     });
 
-    // Serve static files from app directories (icons, etc.)
+    // R190, R209: Invoke app hook (read/write/describe) — used by app_invoke MCP tool
+    this.app.post("/api/apps/:slug/invoke", express.json(), (req, res) => {
+      const { hook, data } = req.body as { hook: string; data?: Record<string, unknown> };
+      const result = this.appDataStore.invoke(req.params.slug, hook, data);
+      res.json(result);
+    });
+
+    // Serve static files from app directories (icons, index.html, etc.)
     this.app.get("/api/apps/:slug/static/:file", (req, res) => {
       const filePath = join(appsDir, req.params.slug, req.params.file);
       if (!existsSync(filePath)) { res.status(404).end(); return; }
@@ -590,6 +656,96 @@ export class DashboardServer {
       const filePath = join(crmDir, `${req.params.slug}.md`);
       if (existsSync(filePath)) unlinkSync(filePath);
       res.json({ ok: true });
+    });
+
+    // --- Spaces CRUD (R310-R318) ---
+    // CRC: crc-SpacesManager.md | Seq: seq-spaces-crud.md
+
+    this.app.get("/api/spaces/tree", (_req, res) => {
+      res.json(this.spacesManager.getTree());
+    });
+
+    this.app.post("/api/spaces/buckets", express.json(), (req, res) => {
+      try {
+        const meta = this.spacesManager.createBucket(req.body);
+        res.json(meta);
+      } catch (err) {
+        res.status(400).json({ error: String(err) });
+      }
+    });
+
+    this.app.patch("/api/spaces/buckets/:id", express.json(), (req, res) => {
+      try {
+        const meta = this.spacesManager.updateBucket(req.params.id, req.body);
+        res.json(meta);
+      } catch (err) {
+        res.status(404).json({ error: String(err) });
+      }
+    });
+
+    this.app.delete("/api/spaces/buckets/:id", (req, res) => {
+      try {
+        this.spacesManager.deleteBucket(req.params.id);
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(404).json({ error: String(err) });
+      }
+    });
+
+    this.app.post("/api/spaces/buckets/:id/items", express.json(), (req, res) => {
+      try {
+        const item = this.spacesManager.createItem(req.params.id, req.body);
+        res.json(item);
+      } catch (err) {
+        res.status(400).json({ error: String(err) });
+      }
+    });
+
+    this.app.patch("/api/spaces/items/:id", express.json(), (req, res) => {
+      try {
+        const item = this.spacesManager.updateItem(req.params.id, req.body);
+        res.json(item);
+      } catch (err) {
+        res.status(404).json({ error: String(err) });
+      }
+    });
+
+    this.app.delete("/api/spaces/items/:id", (req, res) => {
+      try {
+        this.spacesManager.deleteItem(req.params.id);
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(404).json({ error: String(err) });
+      }
+    });
+
+    this.app.post("/api/spaces/items/:id/move", express.json(), (req, res) => {
+      try {
+        const item = this.spacesManager.moveItem(req.params.id, req.body.targetBucketId);
+        res.json(item);
+      } catch (err) {
+        res.status(400).json({ error: String(err) });
+      }
+    });
+
+    this.app.post("/api/spaces/items/:id/reorder", express.json(), (req, res) => {
+      try {
+        const direction = req.body.direction as "up" | "down";
+        if (direction !== "up" && direction !== "down") {
+          res.status(400).json({ error: "direction must be 'up' or 'down'" });
+          return;
+        }
+        this.spacesManager.reorderItem(req.params.id, direction);
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(400).json({ error: String(err) });
+      }
+    });
+
+    this.app.get("/api/spaces/search", (req, res) => {
+      const q = req.query.q as string;
+      if (!q) { res.json([]); return; }
+      res.json(this.spacesManager.search(q));
     });
 
     // --- Document viewer endpoint ---

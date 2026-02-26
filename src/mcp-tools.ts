@@ -458,6 +458,220 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- spaces tools (R333-R338) ---
+  // CRC: crc-SpacesManager.md | Seq: seq-spaces-crud.md
+
+  tools.push({
+    name: "spaces_list_buckets",
+    description: "List all Spaces buckets with item counts (tree structure)",
+    inputSchema: { type: "object", properties: {} },
+    async handler() {
+      try {
+        // Access SpacesManager via dashboard server (lazy — may not be available)
+        const res = await fetch("http://127.0.0.1:3120/api/spaces/tree");
+        const tree = await res.json() as { buckets: Array<{ meta: { id: string; name: string }; items: unknown[]; children: unknown[] }> };
+        const summarize = (b: { meta: { id: string; name: string }; items: unknown[]; children: unknown[] }): string => {
+          const childSummaries = (b.children as Array<{ meta: { id: string; name: string }; items: unknown[]; children: unknown[] }>)
+            .map((c: { meta: { id: string; name: string }; items: unknown[]; children: unknown[] }) => `  - ${c.meta.name} (${c.meta.id}): ${(c.items as unknown[]).length} items`).join("\n");
+          return `${b.meta.name} (${b.meta.id}): ${(b.items as unknown[]).length} items${childSummaries ? "\n" + childSummaries : ""}`;
+        };
+        const text = tree.buckets.map(summarize).join("\n");
+        return { content: [{ type: "text", text: text || "No buckets found" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "spaces_get_bucket",
+    description: "Get a Spaces bucket's details and items",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucketId: { type: "string", description: "Bucket ID (e.g., bucket-fric-and-frac)" },
+        recursive: { type: "boolean", description: "Include sub-buckets (default false)" },
+      },
+      required: ["bucketId"],
+    },
+    async handler(params) {
+      try {
+        const { bucketId } = params as { bucketId: string; recursive?: boolean };
+        const res = await fetch("http://127.0.0.1:3120/api/spaces/tree");
+        const tree = await res.json() as { buckets: Array<{ meta: { id: string; name: string }; items: Array<{ title: string; status: string; id: string; due?: string; assignee?: string }>; children: unknown[] }> };
+        const find = (buckets: typeof tree.buckets): typeof tree.buckets[0] | null => {
+          for (const b of buckets) {
+            if (b.meta.id === bucketId) return b;
+            const found = find(b.children as typeof tree.buckets);
+            if (found) return found;
+          }
+          return null;
+        };
+        const bucket = find(tree.buckets);
+        if (!bucket) return { content: [{ type: "text", text: `Bucket not found: ${bucketId}` }] };
+        const itemLines = bucket.items.map((item) =>
+          `- [${item.status}] ${item.title}${item.due ? ` (due: ${item.due})` : ""}${item.assignee ? ` @${item.assignee}` : ""} (${item.id})`
+        ).join("\n");
+        const text = `${bucket.meta.name}: ${bucket.items.length} items\n${itemLines || "(no items)"}`;
+        return { content: [{ type: "text", text }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "spaces_create_bucket",
+    description: "Create a new Spaces bucket (optionally nested under a parent)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Bucket name" },
+        parentId: { type: "string", description: "Parent bucket ID for nesting (optional)" },
+        description: { type: "string", description: "Bucket description (optional)" },
+        statuses: { type: "array", items: { type: "string" }, description: "Custom status values (default: ['open', 'done'])" },
+        color: { type: "string", description: "Hex color (optional)" },
+      },
+      required: ["name"],
+    },
+    async handler(params) {
+      try {
+        const res = await fetch("http://127.0.0.1:3120/api/spaces/buckets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+        });
+        const bucket = await res.json();
+        if (!res.ok) return { content: [{ type: "text", text: `Error: ${JSON.stringify(bucket)}` }] };
+        return { content: [{ type: "text", text: `Created bucket: ${bucket.name} (${bucket.id})` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "spaces_add_item",
+    description: "Add an item to a Spaces bucket",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucketId: { type: "string", description: "Bucket ID to add item to" },
+        title: { type: "string", description: "Item title" },
+        body: { type: "string", description: "Item body (markdown)" },
+        status: { type: "string", description: "Status (default: first bucket status)" },
+        priority: { type: "number", description: "Priority 0-3 (none, low, medium, high)" },
+        tags: { type: "array", items: { type: "string" }, description: "Tags" },
+        due: { type: "string", description: "Due date (ISO format)" },
+        assignee: { type: "string", description: "Assignee: 'max' or 'caul'" },
+      },
+      required: ["bucketId", "title"],
+    },
+    async handler(params) {
+      try {
+        const { bucketId, ...itemData } = params as { bucketId: string; title: string; [key: string]: unknown };
+        const res = await fetch(`http://127.0.0.1:3120/api/spaces/buckets/${bucketId}/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...itemData, createdBy: "caul" }),
+        });
+        const item = await res.json();
+        if (!res.ok) return { content: [{ type: "text", text: `Error: ${JSON.stringify(item)}` }] };
+        return { content: [{ type: "text", text: `Added item: ${item.title} (${item.id}) to ${bucketId}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "spaces_update_item",
+    description: "Update an existing Spaces item",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string", description: "Item ID" },
+        title: { type: "string", description: "New title" },
+        body: { type: "string", description: "New body" },
+        status: { type: "string", description: "New status" },
+        priority: { type: "number", description: "New priority 0-3" },
+        tags: { type: "array", items: { type: "string" }, description: "New tags" },
+        due: { type: "string", description: "New due date" },
+        assignee: { type: "string", description: "New assignee" },
+      },
+      required: ["itemId"],
+    },
+    async handler(params) {
+      try {
+        const { itemId, ...updates } = params as { itemId: string; [key: string]: unknown };
+        const res = await fetch(`http://127.0.0.1:3120/api/spaces/items/${itemId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updates),
+        });
+        const item = await res.json();
+        if (!res.ok) return { content: [{ type: "text", text: `Error: ${JSON.stringify(item)}` }] };
+        return { content: [{ type: "text", text: `Updated item: ${item.title} (${item.id})` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "spaces_search",
+    description: "Search items across all Spaces buckets",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+      },
+      required: ["query"],
+    },
+    async handler(params) {
+      try {
+        const { query } = params as { query: string };
+        const res = await fetch(`http://127.0.0.1:3120/api/spaces/search?q=${encodeURIComponent(query)}`);
+        const results = await res.json() as Array<{ title: string; id: string; bucketName: string; status: string }>;
+        if (results.length === 0) return { content: [{ type: "text", text: "No results found" }] };
+        const text = results.map((r) => `[${r.status}] ${r.title} (in ${r.bucketName}) — ${r.id}`).join("\n");
+        return { content: [{ type: "text", text }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- app_invoke --- (R190, R209)
+  // Seq: seq-apps-invoke.md
+  tools.push({
+    name: "app_invoke",
+    description: "Invoke an app hook (read, write, describe) on a dashboard app by slug",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "App slug (directory name under ~/.homaruscc/apps/)" },
+        hook: { type: "string", enum: ["read", "write", "describe"], description: "Hook to invoke" },
+        data: { type: "object", description: "Data payload for write hook" },
+      },
+      required: ["slug", "hook"],
+    },
+    async handler(params) {
+      try {
+        const { slug, hook, data } = params as { slug: string; hook: string; data?: Record<string, unknown> };
+        const res = await fetch(`http://127.0.0.1:3120/api/apps/${slug}/invoke`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hook, data }),
+        });
+        const result = await res.json() as { content: Array<{ type: string; text: string }>; isError?: boolean };
+        return result;
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
   // --- run_tool ---
   tools.push({
     name: "run_tool",

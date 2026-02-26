@@ -2,9 +2,12 @@
 // CRC: crc-Backend.md | Seq: seq-startup.md
 // HomarUScc backend — standalone process (no MCP stdio)
 // Used by mcp-proxy.ts or as a standalone server.
+import { resolve } from "node:path";
 import { HomarUScc } from "./homaruscc.js";
 import { DashboardServer } from "./dashboard-server.js";
 import { DashboardAdapter } from "./dashboard-adapter.js";
+import { TelegramCommandHandler } from "./telegram-command-handler.js";
+import type { TelegramChannelAdapter } from "./telegram-adapter.js";
 import type { Logger } from "./types.js";
 
 const logger: Logger = {
@@ -52,6 +55,22 @@ async function main(): Promise<void> {
     loop.setNotifyFn((event) => {
       dashboardServer?.broadcastEvent(event);
     });
+  }
+
+  // R211-R225: Wire up Telegram slash command handler
+  const telegramAdapter = loop.getChannelManager().getAdapter("telegram") as TelegramChannelAdapter | undefined;
+  if (telegramAdapter && dashboardServer) {
+    const projectDir = resolve(import.meta.dirname ?? __dirname, "..");
+    const commandHandler = new TelegramCommandHandler(logger, {
+      getStatus: () => loop.getStatus(),
+      getLastWaitPoll: () => dashboardServer!.getLastWaitPoll(),
+      projectDir,
+      sendTelegram: async (chatId, text) => {
+        await telegramAdapter.send(chatId, { text });
+      },
+    });
+    telegramAdapter.setCommandHandler(commandHandler);
+    logger.info("Telegram command handler registered");
   }
 
   logger.info("HomarUScc backend running (no MCP stdio)");
