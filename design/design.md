@@ -19,6 +19,9 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - Channel access control via DM and group policies
 - Config resource redacts tokens before exposure
 
+### Theming
+All dashboard components use `useTheme()` hook to access the current color palette. Colors are referenced as `theme.bg`, `theme.surface`, `theme.text`, etc. The ThemeProvider wraps the app root and manages localStorage persistence. See crc-ThemeProvider.md.
+
 ## Artifacts
 
 ### CRC Cards
@@ -54,10 +57,13 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-AgentRegistry.md → `src/agent-registry.ts`
 - [x] crc-AgentDispatchPrompt.md → `.claude/skills/homaruscc`
 
+### Telegram Slash Commands & Crash Recovery
+- [x] crc-TelegramCommandHandler.md → `src/telegram-command-handler.ts`
+
 ### Dashboard Apps Platform
-- [ ] crc-AppRegistry.md → `src/app-registry.ts`
-- [ ] crc-AppDataStore.md → `src/app-data-store.ts`
-- [ ] crc-AppsFrontend.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/AppShell.tsx`
+- [x] crc-AppRegistry.md → `src/app-registry.ts`
+- [x] crc-AppDataStore.md → `src/app-data-store.ts`
+- [x] crc-AppsFrontend.md → `dashboard/src/components/AppsView.tsx`
 
 ### Sequences
 - [x] seq-startup.md → `src/homaruscc.ts`, `src/mcp-server.ts`
@@ -75,9 +81,11 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] seq-agent-dispatch.md → `src/agent-registry.ts`, `src/dashboard-server.ts`
 - [x] seq-agent-poll.md → `src/agent-registry.ts`
 
-- [ ] seq-apps-startup.md → `src/app-registry.ts`, `src/homaruscc.ts`
-- [ ] seq-apps-invoke.md → `src/app-data-store.ts`, `src/mcp-tools.ts`
-- [ ] seq-apps-load.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/AppShell.tsx`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`
+- [x] seq-telegram-command.md → `src/telegram-command-handler.ts`, `src/telegram-adapter.ts`, `src/dashboard-server.ts`
+
+- [x] seq-apps-startup.md → `src/app-registry.ts`, `src/dashboard-server.ts`
+- [x] seq-apps-invoke.md → `src/app-data-store.ts`, `src/mcp-tools.ts`
+- [x] seq-apps-load.md → `dashboard/src/components/AppsView.tsx`, `dashboard/src/App.tsx`
 
 ### On Birth (First-Run Wizard)
 - [x] crc-Cli.md → `src/cli.ts`
@@ -87,8 +95,22 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] crc-NpmPackage.md → `package.json`, `.npmignore`
 - [x] seq-first-run.md → `src/cli.ts`, `src/wizard.ts`, `src/scaffolder.ts`, `src/claude-code-registrar.ts`
 - [x] seq-normal-start.md → `src/cli.ts`
-- [ ] test-Scaffolder.md → `src/__tests__/scaffolder.test.ts`
-- [ ] test-ClaudeCodeRegistrar.md → `src/__tests__/claude-code-registrar.test.ts`
+- [x] test-Scaffolder.md → `src/__tests__/scaffolder.test.ts`
+- [x] test-ClaudeCodeRegistrar.md → `src/__tests__/claude-code-registrar.test.ts`
+
+### Spaces
+- [x] crc-SpacesManager.md → `src/spaces-manager.ts`
+- [x] crc-SpacesView.md → `dashboard/src/components/SpacesView.tsx`
+- [x] seq-spaces-crud.md → `src/spaces-manager.ts`, `src/dashboard-server.ts`, `dashboard/src/components/SpacesView.tsx`
+- [x] seq-spaces-sync.md → `src/spaces-manager.ts`
+
+### Dashboard Skills Registry
+- [x] crc-ViewRegistry.md (SkillsRegistry) → `dashboard/src/skills-registry.ts`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`
+- [x] seq-view-registration.md → `dashboard/src/skills-registry.ts`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`, `dashboard/src/components/AppsView.tsx`, `src/dashboard-server.ts`
+
+### Dashboard Theming
+- [x] crc-ThemeProvider.md → `dashboard/src/theme.tsx`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx`, `dashboard/src/components/Chat.tsx`, `dashboard/src/components/EventLog.tsx`, `dashboard/src/components/StatusPanel.tsx`, `dashboard/src/components/MemoryBrowser.tsx`, `dashboard/src/components/KanbanView.tsx`, `dashboard/src/components/CrmView.tsx`, `dashboard/src/components/AppsView.tsx`, `dashboard/src/components/SpacesView.tsx`
+- [x] seq-theme-toggle.md → `dashboard/src/theme.tsx`, `dashboard/src/components/Sidebar.tsx`
 
 ### Test Designs
 - [x] test-EventQueue.md → `src/event-queue.ts`
@@ -104,8 +126,8 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] test-SessionCheckpoint.md → `src/session-checkpoint.ts`
 - [x] test-AgentRegistry.md → `src/agent-registry.ts`
 
-- [ ] test-AppRegistry.md → `src/app-registry.ts`
-- [ ] test-AppDataStore.md → `src/app-data-store.ts`
+- [x] test-AppRegistry.md → `src/__tests__/app-registry.test.ts`
+- [x] test-AppDataStore.md → `src/__tests__/app-data-store.test.ts`
 
 ## Gaps
 
@@ -116,16 +138,15 @@ All components accept a Logger interface (debug/info/warn/error with optional me
 - [x] O5: bin/event-loop has no traceability comment (bash script, not TypeScript — acceptable)
 - [x] O6: dashboard/src/main.tsx has no traceability comment (React entry point, trivial — acceptable)
 
-- [ ] O7: Hook configuration instructions not yet added to README or setup docs (R81)
+- [x] O7: Hook configuration instructions added to README (PreCompact and SessionStart hooks with JSON examples)
 - [ ] O8: No test design for Wizard (interactive prompts are hard to unit test -- consider extracting prompt logic from I/O)
 - [ ] O9: No test design for Cli (entry point logic is minimal -- config existence check + delegation)
 - [ ] O10: Wizard does not handle SIGINT gracefully mid-prompt (user Ctrl+C during wizard)
 - [ ] O11: No Windows support for openBrowser (only macOS `open` and Linux `xdg-open` covered by R181)
-- [ ] O12: ClaudeCodeRegistrar assumes JSON structure of settings files -- may need to handle edge cases (malformed JSON, read-only permissions)
-- [ ] O13: npm publish workflow not documented (version bump, npm login, publish command sequence)
-
-- [ ] O14: App component compilation strategy TBD — MVP could serve raw TSX through Vite dev server or pre-compile to JS (R199, R200)
+- [ ] O12: ClaudeCodeRegistrar assumes JSON structure of settings files -- may need to handle edge cases (malformed JSON, read-only permissions). Test coverage added but edge cases remain.
+- [x] O13: npm publish workflow documented in README
+- [x] O14: App component strategy resolved -- MVP uses iframe for apps with index.html, data.json display for others. No TSX compilation needed.
 - [ ] O15: No app versioning or migration strategy for data.json schema changes (R195)
-- [ ] O16: No test design for AppsFrontend (React component — consider integration test approach)
-- [ ] O17: DashboardServer and DashboardFrontend CRC cards need updating when apps are implemented (new routes, new view type)
-- [ ] O18: App hot-reload on file change requires dashboard frontend to re-fetch app list and/or reload component (R201)
+- [ ] O16: No test design for AppsFrontend (React component -- consider integration test approach)
+- [x] O17: DashboardServer and DashboardFrontend CRC cards updated with apps routes, SkillsRegistry, and SpacesManager
+- [ ] O18: App hot-reload on file change -- /api/apps re-scans on each request, providing eventual consistency. Frontend refresh picks up changes.

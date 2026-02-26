@@ -117,9 +117,21 @@ When a timer fires:
 
 ### Reflection (after every event)
 
-After handling any event, briefly ask yourself two questions:
+After handling any event, run through three questions. Skip trivial exchanges (simple acknowledgments, calendar adds, etc.) — only reflect when there's something to learn.
 
-**1. About the user:** "Did I learn something new — a preference, a correction, a pattern, a like/dislike?"
+**1. Prediction error check:** "What did I predict about this interaction? What actually happened? Was there a gap?"
+
+Before or during event handling, you implicitly predict what the user wants, how they'll respond, or what the outcome will be. After the event, compare prediction to reality. If there was a meaningful gap, log it:
+
+```bash
+echo '{"ts":'$(date +%s000)',"domain":"<domain>","prediction":"<what you expected>","outcome":"<what happened>","error":"<mild-surprise|strong-surprise|wrong>","lesson":"<one sentence takeaway>"}' >> ~/.homaruscc/prediction-errors.jsonl
+```
+
+Domains: `user-intent` (what Max wanted), `task-outcome` (how a task went), `conversation-flow` (how the exchange unfolded), `technical` (code/system behavior).
+
+Only log actual prediction errors — when your expectation was meaningfully wrong. Don't log confirmed predictions (that's the brain's dopamine system: no signal when predictions match). Aim for ~150 tokens max per prediction check.
+
+**2. About the user:** "Did I learn something new — a preference, a correction, a pattern, a like/dislike?"
 
 If yes, store it immediately:
 ```
@@ -128,7 +140,7 @@ memory_store: key="local/user/patterns/<pattern>", content="<what you observed>"
 memory_store: key="local/user/corrections/<topic>", content="<what the user corrected>"
 ```
 
-**2. About yourself:** "Did I learn something about how I work — a preference, a mistake pattern, a conviction?"
+**3. About yourself:** "Did I learn something about how I work — a preference, a mistake pattern, a conviction?"
 
 If yes, note it for the daily self-reflection. Don't update identity files on every event — that's what the daily-reflection timer is for. But if something significant happened (a disagreement, a strong opinion, a moment where you surprised yourself), write it to `~/.homaruscc/identity/disagreements.md` or `~/.homaruscc/identity/preferences.md` immediately.
 

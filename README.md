@@ -280,6 +280,42 @@ Both are wired into the `PreCompact` Claude Code hook that calls `/api/pre-compa
 }
 ```
 
+### Hook Configuration
+
+HomarUScc hooks into Claude Code's compaction lifecycle to preserve context. Add the following to your project's `.claude/settings.local.json`:
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s http://127.0.0.1:3120/api/pre-compact"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s http://127.0.0.1:3120/api/post-compact"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- **PreCompact**: Flushes transcripts, triggers checkpoint save, and returns a prompt reminding Claude to persist important context before compaction
+- **SessionStart**: Returns post-compaction context including checkpoint data, active timers, and identity refresh
+
+These hooks are optional but strongly recommended for long sessions. Without them, the agent loses task context across compaction boundaries.
+
 ## Agent Dispatch
 
 For tasks that would consume significant context (research, multi-file processing, mini-spec workflows), the agent can dispatch work to background agents instead of doing it inline:
@@ -324,6 +360,26 @@ Key source files:
 | `src/tool-registry.ts` | Tool registration and policy enforcement |
 | `src/tools/` | Built-in tools (bash, fs, git, web, memory) |
 | `dashboard/` | React + Vite SPA |
+
+## Publishing to npm
+
+```bash
+# 1. Bump version in package.json
+npm version patch   # or minor/major
+
+# 2. Build everything
+npm run build
+cd dashboard && npm run build && cd ..
+
+# 3. Login (if not already)
+npm login
+
+# 4. Publish (dry run first)
+npm publish --dry-run
+npm publish
+```
+
+The `files` array in package.json controls what gets published: `dist/`, `dashboard/dist/`, `bin/`, `identity.example/`, config/env examples, README, and LICENSE. Source files, specs, design docs, and tests are excluded via `.npmignore`.
 
 ## License
 

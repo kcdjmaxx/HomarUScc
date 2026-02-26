@@ -297,3 +297,122 @@
 - **R208:** (inferred) App creation by the agent uses existing filesystem MCP tools to write manifest.json and component source
 - **R209:** (inferred) The `app_invoke` tool returns errors gracefully if the app or hook does not exist
 - **R210:** (inferred) Frontend shows an empty state in the Apps view when no apps are installed
+
+## Feature: Telegram Slash Commands & Crash Recovery
+**Source:** specs/telegram-commands.md
+
+- **R211:** TelegramChannelAdapter intercepts messages starting with `/` and routes to a TelegramCommandHandler before event delivery
+- **R212:** Registered commands are handled entirely by the backend — no Claude involvement
+- **R213:** Unknown `/` commands pass through as normal message events
+- **R214:** `/ping` command returns "pong" immediately — minimal liveness check
+- **R215:** `/status` command returns system health: channels, timers, memory stats, Claude liveness
+- **R216:** Claude liveness is determined by last `/api/wait` poll timestamp — if >120s ago, Claude is disconnected
+- **R217:** `/restart` command kills existing Claude Code process and starts a new session
+- **R218:** `/restart` sends an immediate acknowledgment before spawning the restart script
+- **R219:** `bin/restart-claude` script handles process kill and session startup as a detached child process
+- **R220:** Restart script calls back to backend with success/failure, backend forwards result via Telegram
+- **R221:** `POST /api/restart-result` endpoint receives restart script callback and sends result to originating chat
+- **R222:** DashboardServer tracks last `/api/wait` call timestamp for Claude liveness detection
+- **R223:** (inferred) Command handler is registered during backend startup with access to subsystem context
+- **R224:** (inferred) Only messages from allowed chat IDs can trigger commands (existing security filter applies first)
+- **R225:** (inferred) Commands execute quickly — `/restart` spawns detached and returns immediately
+
+## Feature: Spaces
+**Source:** specs/spaces.md
+
+- **R301:** Buckets are directories containing `_bucket.md` with YAML frontmatter (id, name, description, statuses, color, sortOrder, property definitions)
+- **R302:** Items are markdown files with YAML frontmatter (id, status, priority 0-3, tags, due date, assignee, createdBy, created, updated, custom properties)
+- **R303:** Buckets can nest as sub-directories with no depth limit in data; UI caps display at 3 levels
+- **R304:** Spaces root directory contains `_root.md` for global config and top-level bucket sort order
+- **R305:** Storage path configurable via `config.json` under `spaces.path`; default derived from vault root + `/Spaces/`
+- **R306:** Default buckets pre-seeded on first run: Fric & Frac (Marketing, Staffing, Menu, Operations), Miami Ice, Personal, Projects (HomarUScc, TED Talk)
+- **R307:** SpacesManager loads full directory tree into in-memory cache on startup
+- **R308:** SpacesManager watches directory for external changes (Obsidian edits) and invalidates cache on file modification
+- **R309:** Writes use write-to-temp-then-rename pattern for atomicity, then update cache
+- **R310:** `GET /api/spaces/tree` returns full nested tree of buckets + items
+- **R311:** `POST /api/spaces/buckets` creates a bucket with name, optional parentId, description, statuses, color, properties
+- **R312:** `PATCH /api/spaces/buckets/:id` updates bucket metadata
+- **R313:** `DELETE /api/spaces/buckets/:id` deletes bucket and all contents (items + sub-buckets)
+- **R314:** `POST /api/spaces/buckets/:id/items` creates an item in a bucket with title, optional body/tags/priority/status/due/assignee/properties
+- **R315:** `PATCH /api/spaces/items/:id` updates any item field (frontmatter or body)
+- **R316:** `DELETE /api/spaces/items/:id` deletes an item
+- **R317:** `POST /api/spaces/items/:id/move` moves an item to a different bucket
+- **R318:** `GET /api/spaces/search?q=...` searches items across all buckets by title, body, tags, property values
+- **R319:** SpacesView.tsx is a single-file React component receiving `messages` and `send` props for chat integration
+- **R320:** List view displays buckets as collapsible tree with indented sub-buckets; items show title, status chip, priority, due date, assignee
+- **R321:** Status chips are clickable and cycle through the bucket's defined statuses
+- **R322:** Due dates highlighted red if overdue, amber if within 2 days
+- **R323:** Quick-add: type title + Enter to add item; optional expansion for additional fields
+- **R324:** Global search bar at top filters items across all buckets
+- **R325:** Click item title to edit inline; click body to expand/edit
+- **R326:** Item deletion is immediate; bucket deletion requires confirmation (click twice)
+- **R327:** Markdown checkboxes in item body rendered as interactive checkboxes; toggling updates the file on disk
+- **R328:** Chat panel scoped to current bucket context, reusing CrmChat pattern
+- **R329:** Sidebar entry: View type "spaces", icon "%", label "Spaces"
+- **R330:** Custom properties defined per bucket (key, type, label); types: text, url, number, date, select
+- **R331:** Items in a bucket can set values for that bucket's defined properties
+- **R332:** Assignee field: "max" or "caul", displayed as initial chip
+- **R333:** MCP tool `spaces_list_buckets` lists all buckets with item counts
+- **R334:** MCP tool `spaces_get_bucket` returns bucket details + all items
+- **R335:** MCP tool `spaces_create_bucket` creates a new bucket, optionally nested under a parent
+- **R336:** MCP tool `spaces_add_item` adds an item to a bucket
+- **R337:** MCP tool `spaces_update_item` updates an existing item
+- **R338:** MCP tool `spaces_search` searches items across all buckets
+- **R339:** (inferred) Filenames slugified from titles; collisions handled by appending -2, -3, etc.
+- **R340:** (inferred) Create spaces directory and default buckets on first access if they do not exist
+- **R341:** (inferred) Inline styles only, dark theme palette matching existing dashboard
+- **R342:** (inferred) No external dependencies; React 19 only
+- **R343:** (inferred) Item IDs are generated as `item-{timestamp}-{random}`; bucket IDs as `bucket-{slug}`
+
+## Feature: Dashboard Theming
+**Source:** specs/dashboard-theming.md
+
+- **R350:** Define dark and light color palettes with semantic names: bg, surface, border, text, textMuted, accent, success, warning, error, buttonBg, buttonText
+- **R351:** Create a ThemeProvider React context that wraps the entire app and provides current palette + toggle function
+- **R352:** Create a useTheme() hook that returns the current theme palette and a toggleTheme() function
+- **R353:** Store theme preference ("dark" or "light") in localStorage under key "homaruscc-theme"; restore on page load
+- **R354:** Default to dark theme when no localStorage value exists (preserves current behavior for existing users)
+- **R355:** Add a theme toggle button in the sidebar footer area, visible on both mobile and desktop
+- **R356:** Update App.tsx to use theme colors for container background, text color, hamburger, and backdrop
+- **R357:** Update Sidebar.tsx to use theme colors for nav background, brand, menu items, status indicators, and close button
+- **R358:** Update Chat.tsx to use theme colors for header, messages, bubbles, input area, and send button
+- **R359:** Update EventLog.tsx to use theme colors for header, event rows, badges, payload, and count chip
+- **R360:** Update StatusPanel.tsx to use theme colors for cards, section titles, rows, dots, and labels
+- **R361:** Update MemoryBrowser.tsx to use theme colors for search bar, input, results, path, score chip, and content
+- **R362:** Update KanbanView.tsx to use theme colors for columns, cards, forms, buttons, and assignee selectors
+- **R363:** Update CrmView.tsx to use theme colors for contact list, detail view, forms, chat panel, and doc viewer
+- **R364:** Update AppsView.tsx to use theme colors for app grid, cards, iframe background, and data section
+- **R365:** Update SpacesView.tsx to use theme colors for bucket tree, items, forms, chat panel, and status/priority chips
+- **R366:** No CSS files or CSS modules -- all theming via inline styles using the theme object from useTheme()
+- **R367:** No external dependencies -- React 19 context and hooks only
+- **R368:** (inferred) Theme toggle uses a sun/moon text indicator to communicate which theme will be applied
+- **R369:** (inferred) ThemeProvider also sets CSS custom properties on document.documentElement for edge cases (scrollbar, selection colors)
+
+## Feature: Dashboard Skills Registry
+**Source:** specs/dashboard-view-registry.md
+
+- **R401:** Create a SkillsRegistry module (`dashboard/src/skills-registry.ts`) that exports `registerSkill()`, `getSidebarSkills()`, `getAppsSkills()`, `getHeadlessSkills()`
+- **R402:** SkillRegistration interface declares: id (string slug), name (display label), icon (single char), surface ("sidebar" | "apps" | "headless"), order (number), core (boolean), plus surface-specific optional fields
+- **R403:** ViewProps interface provides messages (WsMessage[]) and send ((msg: object) => void) to sidebar skills uniformly
+- **R404:** Each sidebar skill calls `registerSkill()` at module scope as a side effect of import
+- **R405:** Core skills (Chat, Events, Status) set `core: true` and are always enabled regardless of config
+- **R406:** Non-core skills can be disabled via config (sidebar, apps, and headless)
+- **R407:** Config.json `dashboard.skills` object maps skill id to boolean; absent keys default to enabled
+- **R408:** Backend exposes `GET /api/config/skills` returning the `dashboard.skills` config map
+- **R409:** Frontend fetches skill config on startup and filters registered skills accordingly (core skills skip filtering)
+- **R410:** App.tsx replaces the hardcoded `View` union type with a string skill id resolved from the registry
+- **R411:** App.tsx renders the active sidebar skill by looking up its component in the registry, passing ViewProps
+- **R412:** Sidebar.tsx receives the filtered, sorted sidebar skill list from the parent instead of owning a hardcoded items array
+- **R413:** Sidebar items are sorted by the `order` field from SkillRegistration
+- **R414:** Core sidebar skills use orders 10-30; non-core sidebar skills use orders 40-80; headless skills use order 0
+- **R415:** Adding a new sidebar skill requires only creating the component file with a `registerSkill()` call and importing it in App.tsx
+- **R416:** The existing AppsView renders `surface: "apps"` skills from the registry as cards/tiles with links
+- **R417:** Default view on startup is the first core sidebar skill by order (Chat, order 10)
+- **R418:** If the active view is disabled by config change, fall back to the default view
+- **R419:** Registry is a simple module-level array — no React context, no runtime mutation after initial import
+- **R420:** Sidebar skills that do not use messages or send simply ignore those props
+- **R421:** `surface: "sidebar"` requires `component` field (React.ComponentType<ViewProps>)
+- **R422:** `surface: "apps"` requires `url` field and optional `description` field
+- **R423:** `surface: "headless"` has optional `tools` (string[]) and `timers` (string[]) metadata fields
+- **R424:** Status page can display headless skills with their tools and timer info for visibility
+- **R425:** Three surface types unify the previously separate built-in views and external apps into one registry
