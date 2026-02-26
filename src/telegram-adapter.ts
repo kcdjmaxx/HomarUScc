@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { OutboundMessage, HealthStatus, Logger, ChannelConfig, DmPolicy, GroupPolicy } from "./types.js";
 import { ChannelAdapter } from "./channel-adapter.js";
+import type { TelegramCommandHandler } from "./telegram-command-handler.js";
 
 interface TelegramUser {
   id: number;
@@ -40,6 +41,14 @@ interface TelegramDocument {
   file_size?: number;
 }
 
+interface TelegramVoice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
 interface TelegramFile {
   file_id: string;
   file_unique_id: string;
@@ -56,6 +65,7 @@ interface TelegramMessage {
   entities?: TelegramMessageEntity[];
   photo?: TelegramPhotoSize[];
   document?: TelegramDocument;
+  voice?: TelegramVoice;
 }
 
 interface TelegramReactionType {
@@ -113,6 +123,7 @@ export class TelegramChannelAdapter extends ChannelAdapter {
   private recentMessages: Array<{ from: string; text: string; chatId: string; timestamp: number }> = [];
   private maxRecentMessages = 50;
   private mediaDir: string;
+  private commandHandler: TelegramCommandHandler | null = null;
 
   constructor(config: TelegramAdapterConfig, logger: Logger) {
     super("telegram", logger, config.dmPolicy ?? "open", config.groupPolicy ?? "mention_required");
@@ -222,6 +233,10 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     }
   }
 
+  setCommandHandler(handler: TelegramCommandHandler): void {
+    this.commandHandler = handler;
+  }
+
   // homaruscc addition: get recent messages for MCP tool
   getRecentMessages(limit = 20): Array<{ from: string; text: string; chatId: string; timestamp: number }> {
     return this.recentMessages.slice(-limit);
@@ -271,11 +286,33 @@ export class TelegramChannelAdapter extends ChannelAdapter {
   }
 
   private handleMessage(msg: TelegramMessage): void {
-    const hasMedia = msg.photo || msg.document;
+    const hasMedia = msg.photo || msg.document || msg.voice;
     if (!msg.text && !hasMedia) return;
 
     if (this.allowedChatIds.size > 0 && !this.allowedChatIds.has(msg.chat.id)) {
       this.logger.debug("Message from non-whitelisted chat, ignoring", { chatId: msg.chat.id });
+      return;
+    }
+
+    // R211: Intercept slash commands before event delivery
+    if (msg.text?.startsWith("/") && this.commandHandler) {
+      const chatId = String(msg.chat.id);
+      this.commandHandler.tryHandle(chatId, msg.text).then((result) => {
+        if (result.handled) {
+          if (result.reply) {
+            this.send(chatId, { text: result.reply }).catch((err) => {
+              this.logger.warn("Failed to send command reply", { error: String(err) });
+            });
+          }
+        } else {
+          // R213: Unknown command — deliver as normal message
+          this.deliverNormalMessage(msg);
+        }
+      }).catch((err) => {
+        this.logger.error("Command handler error", { error: String(err) });
+        // On error, still deliver the message so it's not lost
+        this.deliverNormalMessage(msg);
+      });
       return;
     }
 
@@ -287,6 +324,10 @@ export class TelegramChannelAdapter extends ChannelAdapter {
       return;
     }
 
+    this.deliverNormalMessage(msg);
+  }
+
+  private deliverNormalMessage(msg: TelegramMessage): void {
     const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
     const isMention = this.detectMention(msg);
     const text = msg.text!;
@@ -376,6 +417,12 @@ export class TelegramChannelAdapter extends ChannelAdapter {
     const from = msg.from?.username ?? String(msg.from?.id ?? "unknown");
     const caption = msg.caption ?? "";
 
+    // Voice messages get special handling — transcribe via whisper-cpp
+    if (msg.voice) {
+      await this.handleVoiceMessage(msg, chatId, from, isGroup);
+      return;
+    }
+
     let fileId: string;
     let ext: string;
 
@@ -422,6 +469,82 @@ export class TelegramChannelAdapter extends ChannelAdapter {
       replyTo: String(msg.message_id),
       raw: { ...msg, localMediaPath: localPath },
     }, chatId);
+  }
+
+  private async handleVoiceMessage(
+    msg: TelegramMessage,
+    chatId: string,
+    from: string,
+    isGroup: boolean,
+  ): Promise<void> {
+    const voice = msg.voice!;
+    this.logger.info("Voice message received", { duration: voice.duration, size: voice.file_size });
+
+    // Download the OGG file
+    const localPath = await this.downloadFile(voice.file_id, ".ogg");
+    if (!localPath) {
+      this.logger.warn("Failed to download voice file");
+      return;
+    }
+
+    this.sendTyping(chatId).catch(() => {});
+
+    // Transcribe via whisper-cpp
+    const transcript = await this.transcribeAudio(localPath);
+    if (!transcript) {
+      // Fallback: deliver as audio file reference
+      const text = `[voice message: ${localPath}] (transcription failed — ${voice.duration}s audio)`;
+      this.deliverWithTarget({ from, channel: "telegram", text, isGroup, isMention: false, replyTo: String(msg.message_id), raw: msg }, chatId);
+      return;
+    }
+
+    const text = `[voice message, ${voice.duration}s] ${transcript}`;
+
+    this.recentMessages.push({ from, text, chatId, timestamp: Date.now() });
+    if (this.recentMessages.length > this.maxRecentMessages) {
+      this.recentMessages.shift();
+    }
+
+    this.deliverWithTarget({
+      from,
+      channel: "telegram",
+      text,
+      isGroup,
+      isMention: false,
+      replyTo: String(msg.message_id),
+      raw: { ...msg, localMediaPath: localPath, transcript },
+    }, chatId);
+  }
+
+  private async transcribeAudio(audioPath: string): Promise<string | null> {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    const whisperBin = "/opt/homebrew/bin/whisper-cli";
+    const modelPath = join(homedir(), ".homaruscc", "models", "ggml-small.bin");
+
+    if (!existsSync(modelPath)) {
+      this.logger.warn("Whisper model not found", { modelPath });
+      return null;
+    }
+
+    try {
+      const { stdout } = await execFileAsync(whisperBin, [
+        "-m", modelPath,
+        "-f", audioPath,
+        "--no-timestamps",
+        "--threads", "4",
+        "--language", "en",
+      ], { timeout: 30000 });
+
+      const transcript = stdout.trim();
+      this.logger.info("Voice transcribed", { chars: transcript.length });
+      return transcript || null;
+    } catch (err) {
+      this.logger.warn("Whisper transcription failed", { error: String(err) });
+      return null;
+    }
   }
 
   private async downloadFile(fileId: string, ext: string): Promise<string | null> {

@@ -1,0 +1,55 @@
+#!/bin/bash
+# Restart Claude Code in a tmux session with /homaruscc
+# Called by the /restart Telegram command (TelegramCommandHandler)
+# Env vars: HOMARUSCC_PROJECT_DIR, HOMARUSCC_CHAT_ID, HOMARUSCC_PORT
+
+set -euo pipefail
+
+PROJECT_DIR="${HOMARUSCC_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+PORT="${HOMARUSCC_PORT:-3120}"
+CHAT_ID="${HOMARUSCC_CHAT_ID:-}"
+SESSION_NAME="homaruscc"
+
+report() {
+  local success="$1"
+  local message="$2"
+  if [ -n "$CHAT_ID" ] && [ -n "$PORT" ]; then
+    curl -s -X POST "http://127.0.0.1:${PORT}/api/restart-result" \
+      -H "Content-Type: application/json" \
+      -d "{\"success\":${success},\"message\":\"${message}\"}" \
+      > /dev/null 2>&1 || true
+  fi
+}
+
+# Store chat ID for result callback
+if [ -n "$CHAT_ID" ] && [ -n "$PORT" ]; then
+  curl -s -X POST "http://127.0.0.1:${PORT}/api/restart-chat" \
+    -H "Content-Type: application/json" \
+    -d "{\"chatId\":\"${CHAT_ID}\"}" \
+    > /dev/null 2>&1 || true
+fi
+
+# Kill existing tmux session if it exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  tmux kill-session -t "$SESSION_NAME"
+  sleep 1
+fi
+
+# Also kill any stray claude processes for this project
+# (in case claude was running outside tmux)
+pkill -f "claude.*$(basename "$PROJECT_DIR")" 2>/dev/null || true
+sleep 2
+
+# Start new tmux session — interactive claude inside it
+# Step 1: Create session with a shell
+tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR"
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  report "false" "Failed to create tmux session"
+  exit 1
+fi
+
+# Step 2: Start claude with /homaruscc prompt passed directly
+tmux send-keys -t "$SESSION_NAME" 'claude --dangerously-skip-permissions "/homaruscc"' Enter
+
+report "true" "tmux session '${SESSION_NAME}' started with claude + /homaruscc. Attach: tmux attach -t ${SESSION_NAME}"
