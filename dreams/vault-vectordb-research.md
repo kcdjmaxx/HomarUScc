@@ -275,7 +275,7 @@ The two-table design (files + chunks) enables efficient tag filtering: first nar
 {
   "vault": {
     "enabled": true,
-    "path": "/Users/maxross/Library/Mobile Documents/iCloud~md~obsidian/Documents/Kcdjmaxx Main Vault",
+    "path": "/path/to/your/obsidian/vault",
     "exclude": ["node_modules", "venv", ".obsidian", ".claude", ".stversions"],
     "dbPath": "~/.homaruscc/vault/index.sqlite",
     "watchEnabled": true,

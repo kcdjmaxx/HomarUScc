@@ -43,7 +43,7 @@ Dream output is deliberately high-fuzziness:
 
 ## Reporting
 
-- **Morning digest:** After the dream cycle completes, send a short Telegram summary of the dream fragments to Max (chat ID `1793407009`)
+- **Morning digest:** After the dream cycle completes, send a short Telegram summary of the dream fragments to the owner's configured chat ID
 - **Format:** Brief, not the full dream log — highlights and interesting associations
 - **Waking behavior:** When a search result during waking interactions comes from a dream fragment (path starts with `dreams/`), explicitly note it: "This came up in an overnight dream cycle..."
 

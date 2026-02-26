@@ -44,7 +44,7 @@ Phase 3: Overfitting Prevention (R113)
   v
 Morning Digest (R119)
   |-- Compose: brief summary of dream fragments
-  |-- telegram_send: digest to Max (chatId 1793407009)
+  |-- telegram_send: digest to owner (configured chatId)
   |
   v
 Restart event-loop (back to idle)
