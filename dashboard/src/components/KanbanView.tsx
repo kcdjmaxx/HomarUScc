@@ -1,4 +1,7 @@
+// CRC: crc-ThemeProvider.md
 import { useState, useEffect, useCallback } from "react";
+import { useTheme, type ThemePalette } from "../theme";
+import { registerSkill, type ViewProps } from "../skills-registry";
 
 interface Task {
   id: string;
@@ -20,12 +23,28 @@ const COLUMNS: Array<{ id: Status; label: string }> = [
   { id: "done", label: "Done" },
 ];
 
-const ASSIGNEE_COLORS = {
-  caul: { bg: "#1a1a3e", border: "#7c3aed", badge: "#c4b5fd", text: "#c4b5fd" },
-  max: { bg: "#1a2e1a", border: "#22c55e", badge: "#4ade80", text: "#4ade80" },
-};
+function getAssigneeColors(theme: ThemePalette, isDark: boolean) {
+  return {
+    caul: {
+      bg: isDark ? "#1a1a3e" : "#ede9fe",
+      border: theme.accentSubtle,
+      badge: theme.accent,
+      text: theme.accent,
+    },
+    max: {
+      bg: isDark ? "#1a2e1a" : "#f0fdf4",
+      border: "#22c55e",
+      badge: theme.success,
+      text: theme.success,
+    },
+  };
+}
 
+// R362: KanbanView with theme colors
 export function KanbanView() {
+  const { theme, isDark } = useTheme();
+  const ASSIGNEE_COLORS = getAssigneeColors(theme, isDark);
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState<Status | null>(null);
@@ -96,29 +115,69 @@ export function KanbanView() {
     setEditing(null);
   };
 
+  const inputStyle: React.CSSProperties = {
+    background: theme.bg,
+    border: `1px solid ${theme.inputBorder}`,
+    borderRadius: 6,
+    color: theme.text,
+    padding: "8px 10px",
+    fontSize: 13,
+    fontFamily: "inherit",
+    outline: "none",
+  };
+
+  const textareaStyle: React.CSSProperties = {
+    ...inputStyle,
+    fontSize: 12,
+    resize: "vertical" as const,
+  };
+
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.heading}>Kanban</h2>
-        <div style={styles.legend}>
-          <span style={{ ...styles.legendDot, background: ASSIGNEE_COLORS.caul.badge }} />
-          <span style={styles.legendLabel}>Caul</span>
-          <span style={{ ...styles.legendDot, background: ASSIGNEE_COLORS.max.badge, marginLeft: 12 }} />
-          <span style={styles.legendLabel}>Max</span>
+    <div style={{ padding: 20, height: "100%", overflow: "auto", display: "flex", flexDirection: "column" as const }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: theme.text }}>Kanban</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+          <span style={{ width: 10, height: 10, borderRadius: "50%", display: "inline-block", background: ASSIGNEE_COLORS.caul.badge }} />
+          <span style={{ color: theme.textMuted }}>Caul</span>
+          <span style={{ width: 10, height: 10, borderRadius: "50%", display: "inline-block", background: ASSIGNEE_COLORS.max.badge, marginLeft: 12 }} />
+          <span style={{ color: theme.textMuted }}>Max</span>
         </div>
       </div>
 
-      <div style={styles.board}>
+      <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0 }}>
         {COLUMNS.map((col) => {
           const colTasks = tasks.filter((t) => t.status === col.id);
           return (
-            <div key={col.id} style={styles.column}>
-              <div style={styles.colHeader}>
-                <span style={styles.colTitle}>{col.label}</span>
-                <span style={styles.colCount}>{colTasks.length}</span>
+            <div key={col.id} style={{
+              flex: 1,
+              minWidth: 0,
+              background: theme.surface,
+              borderRadius: 10,
+              padding: 12,
+              display: "flex",
+              flexDirection: "column" as const,
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 12,
+                paddingBottom: 8,
+                borderBottom: `1px solid ${theme.border}`,
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: theme.textMuted, textTransform: "uppercase" as const, letterSpacing: 1 }}>
+                  {col.label}
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  color: theme.textFaint,
+                  background: theme.border,
+                  borderRadius: 10,
+                  padding: "2px 8px",
+                }}>{colTasks.length}</span>
               </div>
 
-              <div style={styles.cardList}>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, flex: 1, overflow: "auto" }}>
                 {colTasks.map((task) => {
                   const colors = ASSIGNEE_COLORS[task.assignee];
                   const isEditing = editing === task.id;
@@ -127,61 +186,69 @@ export function KanbanView() {
                     <div
                       key={task.id}
                       style={{
-                        ...styles.card,
+                        borderRadius: 8,
+                        padding: 10,
                         background: colors.bg,
                         borderLeft: `3px solid ${colors.border}`,
                       }}
                     >
                       {isEditing ? (
-                        <div style={styles.editForm}>
+                        <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
                           <input
-                            style={styles.editInput}
+                            style={inputStyle}
                             value={editTitle}
                             onChange={(e) => setEditTitle(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && saveEdit(task.id)}
                             autoFocus
                           />
                           <textarea
-                            style={styles.editTextarea}
+                            style={textareaStyle}
                             value={editDesc}
                             onChange={(e) => setEditDesc(e.target.value)}
                             rows={2}
                           />
-                          <div style={styles.editActions}>
-                            <button style={styles.btnSave} onClick={() => saveEdit(task.id)}>Save</button>
-                            <button style={styles.btnCancel} onClick={() => setEditing(null)}>Cancel</button>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button style={{ background: theme.buttonBg, border: "none", borderRadius: 6, color: theme.buttonText, cursor: "pointer", fontSize: 12, padding: "6px 16px", fontFamily: "inherit", fontWeight: 600 }} onClick={() => saveEdit(task.id)}>Save</button>
+                            <button style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 6, color: theme.textMuted, cursor: "pointer", fontSize: 12, padding: "6px 16px", fontFamily: "inherit" }} onClick={() => setEditing(null)}>Cancel</button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <div style={styles.cardTop}>
-                            <span
-                              style={{ ...styles.badge, background: colors.badge, color: "#0a0a0f" }}
-                            >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: "2px 8px",
+                              borderRadius: 10,
+                              textTransform: "uppercase" as const,
+                              letterSpacing: 0.5,
+                              background: colors.badge,
+                              color: isDark ? theme.bg : "#fff",
+                            }}>
                               {task.assignee}
                             </span>
-                            <div style={styles.cardActions}>
+                            <div style={{ display: "flex", gap: 4 }}>
                               {col.id !== "todo" && (
-                                <button style={styles.moveBtn} onClick={() => moveTask(task, "left")} title="Move left">&larr;</button>
+                                <button style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 4, color: theme.textMuted, cursor: "pointer", fontSize: 12, padding: "2px 6px", fontFamily: "inherit" }} onClick={() => moveTask(task, "left")} title="Move left">&larr;</button>
                               )}
                               {col.id !== "done" && (
-                                <button style={styles.moveBtn} onClick={() => moveTask(task, "right")} title="Move right">&rarr;</button>
+                                <button style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 4, color: theme.textMuted, cursor: "pointer", fontSize: 12, padding: "2px 6px", fontFamily: "inherit" }} onClick={() => moveTask(task, "right")} title="Move right">&rarr;</button>
                               )}
                             </div>
                           </div>
-                          <div style={styles.cardTitle}>{task.title}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>{task.title}</div>
                           {task.description && (
-                            <div style={styles.cardDesc}>{task.description}</div>
+                            <div style={{ fontSize: 11, color: theme.textMuted, lineHeight: 1.4, marginBottom: 8 }}>{task.description}</div>
                           )}
-                          <div style={styles.cardFooter}>
-                            <button style={styles.btnEdit} onClick={() => startEdit(task)}>Edit</button>
+                          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                            <button style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 4, color: theme.textMuted, cursor: "pointer", fontSize: 10, padding: "3px 8px", fontFamily: "inherit" }} onClick={() => startEdit(task)}>Edit</button>
                             <button
-                              style={styles.btnEdit}
+                              style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 4, color: theme.textMuted, cursor: "pointer", fontSize: 10, padding: "3px 8px", fontFamily: "inherit" }}
                               onClick={() => updateTask(task.id, { assignee: task.assignee === "caul" ? "max" : "caul" })}
                             >
                               &rarr; {task.assignee === "caul" ? "Max" : "Caul"}
                             </button>
-                            <button style={styles.btnDelete} onClick={() => deleteTask(task.id)}>Delete</button>
+                            <button style={{ background: "none", border: `1px solid ${theme.errorSubtle}`, borderRadius: 4, color: theme.error, cursor: "pointer", fontSize: 10, padding: "3px 8px", fontFamily: "inherit", marginLeft: "auto" }} onClick={() => deleteTask(task.id)}>Delete</button>
                           </div>
                         </>
                       )}
@@ -190,9 +257,9 @@ export function KanbanView() {
                 })}
 
                 {showAdd === col.id ? (
-                  <div style={styles.addForm}>
+                  <div style={{ background: theme.border, borderRadius: 8, padding: 10, display: "flex", flexDirection: "column" as const, gap: 8 }}>
                     <input
-                      style={styles.addInput}
+                      style={inputStyle}
                       placeholder="Task title..."
                       value={newTitle}
                       onChange={(e) => setNewTitle(e.target.value)}
@@ -200,19 +267,25 @@ export function KanbanView() {
                       autoFocus
                     />
                     <textarea
-                      style={styles.addTextarea}
+                      style={textareaStyle}
                       placeholder="Description (optional)"
                       value={newDesc}
                       onChange={(e) => setNewDesc(e.target.value)}
                       rows={2}
                     />
-                    <div style={styles.assigneeRow}>
-                      <label style={styles.assigneeLabel}>Assign to:</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <label style={{ fontSize: 11, color: theme.textMuted }}>Assign to:</label>
                       <button
                         style={{
-                          ...styles.assigneeBtn,
+                          border: `1px solid ${theme.inputBorder}`,
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          fontSize: 11,
+                          padding: "4px 12px",
+                          fontFamily: "inherit",
+                          fontWeight: 600,
                           background: newAssignee === "max" ? ASSIGNEE_COLORS.max.badge : "transparent",
-                          color: newAssignee === "max" ? "#0a0a0f" : "#8888a0",
+                          color: newAssignee === "max" ? (isDark ? theme.bg : "#fff") : theme.textMuted,
                         }}
                         onClick={() => setNewAssignee("max")}
                       >
@@ -220,22 +293,38 @@ export function KanbanView() {
                       </button>
                       <button
                         style={{
-                          ...styles.assigneeBtn,
+                          border: `1px solid ${theme.inputBorder}`,
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          fontSize: 11,
+                          padding: "4px 12px",
+                          fontFamily: "inherit",
+                          fontWeight: 600,
                           background: newAssignee === "caul" ? ASSIGNEE_COLORS.caul.badge : "transparent",
-                          color: newAssignee === "caul" ? "#0a0a0f" : "#8888a0",
+                          color: newAssignee === "caul" ? (isDark ? theme.bg : "#fff") : theme.textMuted,
                         }}
                         onClick={() => setNewAssignee("caul")}
                       >
                         Caul
                       </button>
                     </div>
-                    <div style={styles.addActions}>
-                      <button style={styles.btnSave} onClick={() => createTask(col.id)}>Add</button>
-                      <button style={styles.btnCancel} onClick={() => setShowAdd(null)}>Cancel</button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={{ background: theme.buttonBg, border: "none", borderRadius: 6, color: theme.buttonText, cursor: "pointer", fontSize: 12, padding: "6px 16px", fontFamily: "inherit", fontWeight: 600 }} onClick={() => createTask(col.id)}>Add</button>
+                      <button style={{ background: "none", border: `1px solid ${theme.inputBorder}`, borderRadius: 6, color: theme.textMuted, cursor: "pointer", fontSize: 12, padding: "6px 16px", fontFamily: "inherit" }} onClick={() => setShowAdd(null)}>Cancel</button>
                     </div>
                   </div>
                 ) : (
-                  <button style={styles.addBtn} onClick={() => setShowAdd(col.id)}>+ Add task</button>
+                  <button style={{
+                    background: "none",
+                    border: `1px dashed ${theme.inputBorder}`,
+                    borderRadius: 8,
+                    color: theme.textFaint,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    padding: "10px",
+                    fontFamily: "inherit",
+                    marginTop: 4,
+                  }} onClick={() => setShowAdd(col.id)}>+ Add task</button>
                 )}
               </div>
             </div>
@@ -246,266 +335,13 @@ export function KanbanView() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    padding: 20,
-    height: "100%",
-    overflow: "auto",
-    display: "flex",
-    flexDirection: "column",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  heading: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  legend: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
-    display: "inline-block",
-  },
-  legendLabel: {
-    color: "#8888a0",
-  },
-  board: {
-    display: "flex",
-    gap: 16,
-    flex: 1,
-    minHeight: 0,
-  },
-  column: {
-    flex: 1,
-    minWidth: 0,
-    background: "#12121a",
-    borderRadius: 10,
-    padding: 12,
-    display: "flex",
-    flexDirection: "column",
-  },
-  colHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottom: "1px solid #1e1e2e",
-  },
-  colTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#8888a0",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  colCount: {
-    fontSize: 11,
-    color: "#555",
-    background: "#1e1e2e",
-    borderRadius: 10,
-    padding: "2px 8px",
-  },
-  cardList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    flex: 1,
-    overflow: "auto",
-  },
-  card: {
-    borderRadius: 8,
-    padding: 10,
-  },
-  cardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  badge: {
-    fontSize: 10,
-    fontWeight: 700,
-    padding: "2px 8px",
-    borderRadius: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  cardActions: {
-    display: "flex",
-    gap: 4,
-  },
-  moveBtn: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: 4,
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "2px 6px",
-    fontFamily: "inherit",
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#e0e0e8",
-    marginBottom: 4,
-  },
-  cardDesc: {
-    fontSize: 11,
-    color: "#8888a0",
-    lineHeight: 1.4,
-    marginBottom: 8,
-  },
-  cardFooter: {
-    display: "flex",
-    gap: 6,
-    marginTop: 6,
-  },
-  btnEdit: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: 4,
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 10,
-    padding: "3px 8px",
-    fontFamily: "inherit",
-  },
-  btnDelete: {
-    background: "none",
-    border: "1px solid #4a1a1a",
-    borderRadius: 4,
-    color: "#f87171",
-    cursor: "pointer",
-    fontSize: 10,
-    padding: "3px 8px",
-    fontFamily: "inherit",
-    marginLeft: "auto",
-  },
-  addBtn: {
-    background: "none",
-    border: "1px dashed #333",
-    borderRadius: 8,
-    color: "#555",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "10px",
-    fontFamily: "inherit",
-    marginTop: 4,
-  },
-  addForm: {
-    background: "#1e1e2e",
-    borderRadius: 8,
-    padding: 10,
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  addInput: {
-    background: "#0a0a0f",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#e0e0e8",
-    padding: "8px 10px",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  addTextarea: {
-    background: "#0a0a0f",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#e0e0e8",
-    padding: "8px 10px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    outline: "none",
-    resize: "vertical" as const,
-  },
-  assigneeRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  assigneeLabel: {
-    fontSize: 11,
-    color: "#8888a0",
-  },
-  assigneeBtn: {
-    border: "1px solid #333",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 11,
-    padding: "4px 12px",
-    fontFamily: "inherit",
-    fontWeight: 600,
-  },
-  addActions: {
-    display: "flex",
-    gap: 8,
-  },
-  btnSave: {
-    background: "#7c3aed",
-    border: "none",
-    borderRadius: 6,
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "6px 16px",
-    fontFamily: "inherit",
-    fontWeight: 600,
-  },
-  btnCancel: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "6px 16px",
-    fontFamily: "inherit",
-  },
-  editForm: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-  },
-  editInput: {
-    background: "#0a0a0f",
-    border: "1px solid #444",
-    borderRadius: 4,
-    color: "#e0e0e8",
-    padding: "6px 8px",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  editTextarea: {
-    background: "#0a0a0f",
-    border: "1px solid #444",
-    borderRadius: 4,
-    color: "#e0e0e8",
-    padding: "6px 8px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    outline: "none",
-    resize: "vertical" as const,
-  },
-  editActions: {
-    display: "flex",
-    gap: 6,
-  },
-};
+// R404: Self-register as sidebar skill at module scope (R420: ignores ViewProps)
+registerSkill({
+  id: "kanban",
+  name: "Kanban",
+  icon: "=",
+  surface: "sidebar",
+  component: KanbanView as unknown as React.ComponentType<ViewProps>,
+  order: 50,
+  core: false,
+});

@@ -1,165 +1,145 @@
-// CRC: crc-DashboardFrontend.md
-type View = "chat" | "events" | "status" | "memory" | "apps" | "kanban" | "crm";
+// CRC: crc-DashboardFrontend.md | CRC: crc-ThemeProvider.md | CRC: crc-ViewRegistry.md | Seq: seq-theme-toggle.md | Seq: seq-view-registration.md
+import { useTheme } from "../theme";
+import type { SkillRegistration } from "../skills-registry";
 
+// R412: Sidebar receives filtered, sorted sidebar skill list from parent
 interface Props {
-  view: View;
-  onViewChange: (v: View) => void;
+  skills: SkillRegistration[];
+  activeView: string;
+  onViewChange: (v: string) => void;
   connected: boolean;
   isMobile?: boolean;
   onClose?: () => void;
 }
 
-const items: Array<{ id: View; label: string; icon: string }> = [
-  { id: "chat", label: "Chat", icon: ">" },
-  { id: "events", label: "Events", icon: "#" },
-  { id: "status", label: "Status", icon: "~" },
-  { id: "memory", label: "Memory", icon: "@" },
-  { id: "kanban", label: "Kanban", icon: "=" },
-  { id: "crm", label: "People", icon: "&" },
-  { id: "apps", label: "Apps", icon: "+" },
-];
+// R355, R357, R412: Sidebar with theme colors and registry-driven nav items
+export function Sidebar({ skills, activeView, onViewChange, connected, isMobile, onClose }: Props) {
+  const { theme, isDark, toggleTheme } = useTheme();
 
-export function Sidebar({ view, onViewChange, connected, isMobile, onClose }: Props) {
-  const navStyle = isMobile
-    ? { ...styles.nav, ...styles.navMobile }
-    : styles.nav;
-
-  return (
-    <nav style={navStyle}>
-      <div style={styles.brandRow}>
-        <div style={styles.brand}>
-          <div style={styles.logo}>H</div>
-          <span style={styles.title}>HomarUScc</span>
-        </div>
-        {isMobile && onClose && (
-          <button onClick={onClose} style={styles.closeBtn} aria-label="Close menu">
-            &times;
-          </button>
-        )}
-      </div>
-
-      <div style={styles.status}>
-        <span style={{
-          ...styles.dot,
-          background: connected ? "#4ade80" : "#f87171",
-        }} />
-        <span style={styles.statusText}>{connected ? "Connected" : "Disconnected"}</span>
-      </div>
-
-      <div style={styles.menu}>
-        {items.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onViewChange(item.id)}
-            style={{
-              ...styles.menuItem,
-              background: view === item.id ? "#1e1e2e" : "transparent",
-              color: view === item.id ? "#c4b5fd" : "#8888a0",
-            }}
-          >
-            <span style={styles.icon}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
-const styles = {
-  nav: {
+  const navBase: React.CSSProperties = {
     width: 200,
-    background: "#12121a",
-    borderRight: "1px solid #1e1e2e",
+    background: theme.surface,
+    borderRight: `1px solid ${theme.border}`,
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
     padding: "16px 0",
-  },
-  navMobile: {
-    position: "fixed" as const,
+  };
+
+  const navMobile: React.CSSProperties = {
+    position: "fixed",
     top: 0,
     left: 0,
     bottom: 0,
     zIndex: 200,
     width: 240,
-    boxShadow: "4px 0 24px rgba(0,0,0,0.5)",
-  },
-  brandRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "0 16px 16px",
-    borderBottom: "1px solid #1e1e2e",
-  },
-  brand: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  logo: {
-    width: 28,
-    height: 28,
-    background: "linear-gradient(135deg, #7c3aed, #c4b5fd)",
-    borderRadius: 6,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 14,
-    color: "#fff",
-  },
-  title: {
-    fontWeight: 600,
-    fontSize: 14,
-    color: "#e0e0e8",
-  },
-  closeBtn: {
-    background: "none",
-    border: "none",
-    color: "#8888a0",
-    fontSize: 22,
-    cursor: "pointer",
-    padding: "0 4px",
-    fontFamily: "inherit",
-  },
-  status: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "12px 16px",
-    fontSize: 11,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    display: "inline-block",
-  },
-  statusText: {
-    color: "#8888a0",
-  },
-  menu: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 2,
-    padding: "8px 8px",
-  },
-  menuItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 12px",
-    border: "none",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 13,
-    fontFamily: "inherit",
-    transition: "all 0.15s",
-  },
-  icon: {
-    width: 16,
-    textAlign: "center" as const,
-    fontWeight: 700,
-    fontSize: 14,
-  },
-};
+    boxShadow: `4px 0 24px ${theme.shadow}`,
+  };
+
+  const navStyle = isMobile ? { ...navBase, ...navMobile } : navBase;
+
+  return (
+    <nav style={navStyle}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 16px 16px",
+        borderBottom: `1px solid ${theme.border}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 28,
+            height: 28,
+            background: `linear-gradient(135deg, ${theme.accentSubtle}, ${theme.accent})`,
+            borderRadius: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 700,
+            fontSize: 14,
+            color: "#fff",
+          }}>H</div>
+          <span style={{ fontWeight: 600, fontSize: 14, color: theme.text }}>HomarUScc</span>
+        </div>
+        {isMobile && onClose && (
+          <button onClick={onClose} style={{
+            background: "none",
+            border: "none",
+            color: theme.textMuted,
+            fontSize: 22,
+            cursor: "pointer",
+            padding: "0 4px",
+            fontFamily: "inherit",
+          }} aria-label="Close menu">
+            &times;
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 16px", fontSize: 11 }}>
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          display: "inline-block",
+          background: connected ? theme.success : theme.error,
+        }} />
+        <span style={{ color: theme.textMuted }}>{connected ? "Connected" : "Disconnected"}</span>
+      </div>
+
+      {/* R412, R413: Render nav items from registry-derived skills list */}
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 2, padding: "8px 8px", flex: 1 }}>
+        {skills.map((skill) => (
+          <button
+            key={skill.id}
+            onClick={() => onViewChange(skill.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 13,
+              fontFamily: "inherit",
+              transition: "all 0.15s",
+              background: activeView === skill.id ? theme.border : "transparent",
+              color: activeView === skill.id ? theme.accent : theme.textMuted,
+            }}
+          >
+            <span style={{ width: 16, textAlign: "center" as const, fontWeight: 700, fontSize: 14 }}>{skill.icon}</span>
+            {skill.name}
+          </button>
+        ))}
+      </div>
+
+      {/* R355, R368: Theme toggle button in sidebar footer */}
+      <div style={{ padding: "8px 16px", borderTop: `1px solid ${theme.border}` }}>
+        <button
+          onClick={toggleTheme}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            width: "100%",
+            padding: "8px 12px",
+            background: "transparent",
+            border: `1px solid ${theme.border}`,
+            borderRadius: 6,
+            color: theme.textMuted,
+            fontSize: 12,
+            fontFamily: "inherit",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+          aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          <span style={{ fontSize: 14 }}>{isDark ? "\u263C" : "\u263E"}</span>
+          {isDark ? "Light Mode" : "Dark Mode"}
+        </button>
+      </div>
+    </nav>
+  );
+}

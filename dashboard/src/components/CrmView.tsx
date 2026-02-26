@@ -1,8 +1,11 @@
+// CRC: crc-ThemeProvider.md
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useTheme, type ThemePalette } from "../theme";
+import { registerSkill, type ViewProps } from "../skills-registry";
 
 interface WsMessage {
   type: string;
-  payload: Record<string, unknown>;
+  payload: unknown;
 }
 
 interface CrmViewProps {
@@ -39,7 +42,9 @@ const TAG_COLORS: Record<string, string> = {
 
 const defaultTagColor = "#8888a0";
 
+// R363: CrmView with theme colors
 export function CrmView({ messages, send }: CrmViewProps) {
+  const { theme, isDark } = useTheme();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -152,10 +157,11 @@ export function CrmView({ messages, send }: CrmViewProps) {
   if (selected && selectedContact) {
     if (editing) {
       return (
-        <div style={styles.container}>
-          <button onClick={() => { setEditing(false); }} style={styles.backBtn}>&larr; Cancel</button>
-          <h2 style={styles.heading}>Edit Contact</h2>
+        <div style={{ padding: 20, height: "100%", overflow: "auto", display: "flex", flexDirection: "column" as const }}>
+          <button onClick={() => { setEditing(false); }} style={{ background: "none", border: "none", color: theme.accent, fontSize: 13, cursor: "pointer", padding: "4px 0", marginBottom: 16, fontFamily: "inherit", textAlign: "left" as const }}>&larr; Cancel</button>
+          <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 600, color: theme.text }}>Edit Contact</h2>
           <ContactForm
+            theme={theme} isDark={isDark}
             name={formName} setName={setFormName}
             email={formEmail} setEmail={setFormEmail}
             phone={formPhone} setPhone={setFormPhone}
@@ -171,54 +177,59 @@ export function CrmView({ messages, send }: CrmViewProps) {
     }
 
     return (
-      <div style={styles.container}>
-        <button onClick={() => setSelected(null)} style={styles.backBtn}>&larr; All Contacts</button>
-        <div style={styles.detailCard}>
-          <div style={styles.detailHeader}>
-            <div style={styles.avatar}>{selectedContact.name[0]?.toUpperCase()}</div>
+      <div style={{ padding: 20, height: "100%", overflow: "auto", display: "flex", flexDirection: "column" as const }}>
+        <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: theme.accent, fontSize: 13, cursor: "pointer", padding: "4px 0", marginBottom: 16, fontFamily: "inherit", textAlign: "left" as const }}>&larr; All Contacts</button>
+        <div style={{ background: theme.surface, borderRadius: 12, padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: "50%",
+              background: `linear-gradient(135deg, ${theme.accentSubtle}, ${theme.accent})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 700, fontSize: 22, color: "#fff", flexShrink: 0,
+            }}>{selectedContact.name[0]?.toUpperCase()}</div>
             <div>
-              <h2 style={styles.detailName}>{selectedContact.name}</h2>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: theme.text }}>{selectedContact.name}</h2>
               {selectedContact.aliases.length > 0 && (
-                <div style={styles.detailAliases}>aka {selectedContact.aliases.join(", ")}</div>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>aka {selectedContact.aliases.join(", ")}</div>
               )}
             </div>
           </div>
 
-          <div style={styles.detailMeta}>
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, marginBottom: 16 }}>
             {selectedContact.email && (
-              <div style={styles.metaRow}>
-                <span style={styles.metaLabel}>Email</span>
-                <span style={styles.metaValue}>{selectedContact.email}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+                <span style={{ color: theme.textMuted, fontWeight: 500 }}>Email</span>
+                <span style={{ color: theme.text }}>{selectedContact.email}</span>
               </div>
             )}
             {selectedContact.phone && (
-              <div style={styles.metaRow}>
-                <span style={styles.metaLabel}>Phone</span>
-                <span style={styles.metaValue}>{selectedContact.phone}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+                <span style={{ color: theme.textMuted, fontWeight: 500 }}>Phone</span>
+                <span style={{ color: theme.text }}>{selectedContact.phone}</span>
               </div>
             )}
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Context</span>
-              <span style={styles.metaValue}>{selectedContact.context || "—"}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+              <span style={{ color: theme.textMuted, fontWeight: 500 }}>Context</span>
+              <span style={{ color: theme.text }}>{selectedContact.context || "\u2014"}</span>
             </div>
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Source</span>
-              <span style={styles.metaValue}>{selectedContact.source}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+              <span style={{ color: theme.textMuted, fontWeight: 500 }}>Source</span>
+              <span style={{ color: theme.text }}>{selectedContact.source}</span>
             </div>
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Last mentioned</span>
-              <span style={styles.metaValue}>{selectedContact.lastMentioned}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+              <span style={{ color: theme.textMuted, fontWeight: 500 }}>Last mentioned</span>
+              <span style={{ color: theme.text }}>{selectedContact.lastMentioned}</span>
             </div>
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Added</span>
-              <span style={styles.metaValue}>{selectedContact.created}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+              <span style={{ color: theme.textMuted, fontWeight: 500 }}>Added</span>
+              <span style={{ color: theme.text }}>{selectedContact.created}</span>
             </div>
           </div>
 
           {selectedContact.tags.length > 0 && (
-            <div style={styles.tagRow}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, marginBottom: 16 }}>
               {selectedContact.tags.map((tag) => (
-                <span key={tag} style={{ ...styles.tag, borderColor: TAG_COLORS[tag] ?? defaultTagColor, color: TAG_COLORS[tag] ?? defaultTagColor }}>
+                <span key={tag} style={{ border: "1px solid", borderRadius: 12, fontSize: 11, padding: "3px 10px", fontWeight: 500, borderColor: TAG_COLORS[tag] ?? defaultTagColor, color: TAG_COLORS[tag] ?? defaultTagColor }}>
                   {tag}
                 </span>
               ))}
@@ -226,31 +237,31 @@ export function CrmView({ messages, send }: CrmViewProps) {
           )}
 
           {selectedContact.connections.length > 0 && (
-            <div style={styles.connectionsSection}>
-              <h3 style={styles.sectionTitle}>Connections</h3>
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: theme.textMuted, marginBottom: 8, marginTop: 0, textTransform: "uppercase" as const, letterSpacing: 1 }}>Connections</h3>
               {selectedContact.connections.map((conn, i) => (
-                <div key={i} style={styles.connectionRow}>
-                  <span style={styles.connectionName}>{conn.name}</span>
-                  <span style={styles.connectionRel}>{conn.relationship}</span>
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+                  <span style={{ color: theme.accent, fontWeight: 500 }}>{conn.name}</span>
+                  <span style={{ color: theme.textMuted }}>{conn.relationship}</span>
                 </div>
               ))}
             </div>
           )}
 
           {selectedContact.notes && (
-            <div style={styles.notesSection}>
-              <h3 style={styles.sectionTitle}>Notes</h3>
-              <div style={styles.notesContent}>
-                <LinkedNotes text={selectedContact.notes} onDocClick={setDocPath} />
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: theme.textMuted, marginBottom: 8, marginTop: 0, textTransform: "uppercase" as const, letterSpacing: 1 }}>Notes</h3>
+              <div style={{ fontSize: 13, color: theme.text, lineHeight: 1.6, whiteSpace: "pre-wrap" as const, background: theme.bg, borderRadius: 8, padding: 12 }}>
+                <LinkedNotes text={selectedContact.notes} onDocClick={setDocPath} theme={theme} />
               </div>
             </div>
           )}
 
-          {docPath && <DocViewer path={docPath} onClose={() => setDocPath(null)} />}
+          {docPath && <DocViewer path={docPath} onClose={() => setDocPath(null)} theme={theme} />}
 
-          <div style={styles.detailActions}>
-            <button style={styles.btnEdit} onClick={() => startEdit(selectedContact)}>Edit</button>
-            <button style={styles.btnDelete} onClick={() => deleteContact(selectedContact.slug)}>Delete</button>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button style={{ background: theme.border, border: `1px solid ${theme.inputBorder}`, borderRadius: 6, color: theme.accent, cursor: "pointer", fontSize: 12, padding: "8px 20px", fontFamily: "inherit", fontWeight: 500 }} onClick={() => startEdit(selectedContact)}>Edit</button>
+            <button style={{ background: "none", border: `1px solid ${theme.errorSubtle}`, borderRadius: 6, color: theme.error, cursor: "pointer", fontSize: 12, padding: "8px 20px", fontFamily: "inherit", marginLeft: "auto" }} onClick={() => deleteContact(selectedContact.slug)}>Delete</button>
           </div>
         </div>
         <CrmChat
@@ -258,6 +269,8 @@ export function CrmView({ messages, send }: CrmViewProps) {
           send={send}
           context={`[CRM: viewing ${selectedContact.name}] `}
           placeholder={`Chat about ${selectedContact.name}...`}
+          theme={theme}
+          isDark={isDark}
         />
       </div>
     );
@@ -265,30 +278,42 @@ export function CrmView({ messages, send }: CrmViewProps) {
 
   // List view
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.heading}>Contacts</h2>
-        <span style={styles.count}>{contacts.length} people</span>
-        <button style={styles.addBtn} onClick={() => { resetForm(); setShowAdd(true); }}>+ Add</button>
+    <div style={{ padding: 20, height: "100%", overflow: "auto", display: "flex", flexDirection: "column" as const }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: theme.text }}>Contacts</h2>
+        <span style={{ fontSize: 12, color: theme.textMuted }}>{contacts.length} people</span>
+        <button style={{ marginLeft: "auto", background: theme.buttonBg, border: "none", borderRadius: 6, color: theme.buttonText, cursor: "pointer", fontSize: 12, padding: "6px 16px", fontFamily: "inherit", fontWeight: 600 }} onClick={() => { resetForm(); setShowAdd(true); }}>+ Add</button>
       </div>
 
-      <div style={styles.filterRow}>
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, marginBottom: 16 }}>
         <input
-          style={styles.searchInput}
+          style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.text, padding: "10px 14px", fontSize: 13, fontFamily: "inherit", outline: "none" }}
           placeholder="Search contacts..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         {allTags.length > 0 && (
-          <div style={styles.tagFilter}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
             <button
-              style={{ ...styles.filterChip, ...(filterTag === null ? styles.filterChipActive : {}) }}
+              style={{
+                background: filterTag === null ? theme.border : "none",
+                border: `1px solid ${filterTag === null ? theme.accentSubtle : theme.inputBorder}`,
+                borderRadius: 12,
+                color: filterTag === null ? theme.accent : theme.textMuted,
+                cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
+              }}
               onClick={() => setFilterTag(null)}
             >All</button>
             {allTags.map((tag) => (
               <button
                 key={tag}
-                style={{ ...styles.filterChip, ...(filterTag === tag ? styles.filterChipActive : {}), borderColor: TAG_COLORS[tag] ?? defaultTagColor }}
+                style={{
+                  background: filterTag === tag ? theme.border : "none",
+                  border: `1px solid ${filterTag === tag ? (TAG_COLORS[tag] ?? defaultTagColor) : (TAG_COLORS[tag] ?? defaultTagColor)}`,
+                  borderRadius: 12,
+                  color: filterTag === tag ? theme.accent : theme.textMuted,
+                  cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
+                }}
                 onClick={() => setFilterTag(filterTag === tag ? null : tag)}
               >{tag}</button>
             ))}
@@ -297,9 +322,10 @@ export function CrmView({ messages, send }: CrmViewProps) {
       </div>
 
       {showAdd && (
-        <div style={styles.addFormContainer}>
-          <h3 style={styles.addFormTitle}>New Contact</h3>
+        <div style={{ background: theme.surface, borderRadius: 12, padding: 20, marginBottom: 16 }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 600, color: theme.text }}>New Contact</h3>
           <ContactForm
+            theme={theme} isDark={isDark}
             name={formName} setName={setFormName}
             email={formEmail} setEmail={setFormEmail}
             phone={formPhone} setPhone={setFormPhone}
@@ -310,31 +336,40 @@ export function CrmView({ messages, send }: CrmViewProps) {
             onSubmit={createContact}
             submitLabel="Add Contact"
           />
-          <button style={styles.cancelFormBtn} onClick={() => setShowAdd(false)}>Cancel</button>
+          <button style={{ background: "none", border: "none", color: theme.textMuted, cursor: "pointer", fontSize: 12, padding: "8px 0", fontFamily: "inherit", marginTop: 8 }} onClick={() => setShowAdd(false)}>Cancel</button>
         </div>
       )}
 
-      <div style={styles.contactList}>
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, flex: 1, overflow: "auto" }}>
         {filtered.length === 0 && (
-          <div style={styles.empty}>
+          <div style={{ color: theme.textMuted, fontSize: 13, padding: "40px 0", textAlign: "center" as const }}>
             {contacts.length === 0 ? "No contacts yet. Add one or mention someone in conversation." : "No matches."}
           </div>
         )}
         {filtered.map((c) => (
-          <button key={c.slug} style={styles.contactCard} onClick={() => setSelected(c.slug)}>
-            <div style={styles.cardAvatar}>{c.name[0]?.toUpperCase()}</div>
-            <div style={styles.cardInfo}>
-              <div style={styles.cardName}>{c.name}</div>
-              <div style={styles.cardContext}>{c.context || c.email || "No context"}</div>
-              <div style={styles.cardTags}>
+          <button key={c.slug} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+            background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10,
+            cursor: "pointer", textAlign: "left" as const, fontFamily: "inherit", color: theme.text,
+          }} onClick={() => setSelected(c.slug)}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: `linear-gradient(135deg, ${theme.accentSubtle}, ${theme.accent})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 700, fontSize: 14, color: "#fff", flexShrink: 0,
+            }}>{c.name[0]?.toUpperCase()}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{c.name}</div>
+              <div style={{ fontSize: 11, color: theme.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{c.context || c.email || "No context"}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                 {c.tags.slice(0, 3).map((tag) => (
-                  <span key={tag} style={{ ...styles.cardTag, color: TAG_COLORS[tag] ?? defaultTagColor }}>{tag}</span>
+                  <span key={tag} style={{ fontSize: 10, fontWeight: 500, color: TAG_COLORS[tag] ?? defaultTagColor }}>{tag}</span>
                 ))}
               </div>
             </div>
-            <div style={styles.cardMeta}>
-              <span style={styles.cardDate}>{c.lastMentioned}</span>
-              <span style={styles.cardSource}>{c.source}</span>
+            <div style={{ display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+              <span style={{ fontSize: 10, color: theme.textFaint }}>{c.lastMentioned}</span>
+              <span style={{ fontSize: 9, color: theme.textFaint, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>{c.source}</span>
             </div>
           </button>
         ))}
@@ -344,13 +379,15 @@ export function CrmView({ messages, send }: CrmViewProps) {
         send={send}
         context="[CRM: contacts list] "
         placeholder="Chat about your contacts..."
+        theme={theme}
+        isDark={isDark}
       />
     </div>
   );
 }
 
-// Detect file paths like "HalShare/..." or "~/.homaruscc/..." and make them clickable
-function LinkedNotes({ text, onDocClick }: { text: string; onDocClick: (path: string) => void }) {
+// Detect file paths and make them clickable
+function LinkedNotes({ text, onDocClick, theme }: { text: string; onDocClick: (path: string) => void; theme: ThemePalette }) {
   const pathPattern = /((?:HalShare|~\/\.homaruscc)\/[\w./_-]+\.md)/g;
   const parts: Array<{ type: "text" | "link"; value: string }> = [];
   let lastIdx = 0;
@@ -369,7 +406,18 @@ function LinkedNotes({ text, onDocClick }: { text: string; onDocClick: (path: st
           <button
             key={i}
             onClick={() => onDocClick(p.value)}
-            style={docStyles.fileLink}
+            style={{
+              background: "none",
+              border: `1px solid ${theme.accentSubtle}`,
+              borderRadius: 4,
+              color: theme.accent,
+              cursor: "pointer",
+              fontSize: 12,
+              padding: "1px 6px",
+              fontFamily: "inherit",
+              fontWeight: 500,
+              display: "inline",
+            }}
           >
             {p.value.split("/").pop()}
           </button>
@@ -381,93 +429,83 @@ function LinkedNotes({ text, onDocClick }: { text: string; onDocClick: (path: st
   );
 }
 
-// Lightweight markdown to HTML — handles headers, bold, italic, links, lists, tables, code blocks, hr
-function renderMarkdown(md: string): string {
+// Lightweight markdown to HTML
+function renderMarkdown(md: string, theme: ThemePalette): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const lines = md.split("\n");
   const out: string[] = [];
   let inCode = false;
   let inTable = false;
-  let inList: string | null = null; // "ul" or "ol"
+  let inList: string | null = null;
 
   const inlineFmt = (line: string): string => {
     let s = esc(line);
     s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    s = s.replace(/`(.+?)`/g, '<code style="background:#1e1e2e;padding:1px 4px;border-radius:3px">$1</code>');
-    s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" style="color:#c4b5fd" target="_blank">$1</a>');
+    s = s.replace(/`(.+?)`/g, `<code style="background:${theme.border};padding:1px 4px;border-radius:3px">$1</code>`);
+    s = s.replace(/\[(.+?)\]\((.+?)\)/g, `<a href="$2" style="color:${theme.accent}" target="_blank">$1</a>`);
     return s;
   };
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
 
-    // Code blocks
     if (raw.startsWith("```")) {
       if (inCode) { out.push("</pre>"); inCode = false; }
-      else { out.push('<pre style="background:#0a0a0f;padding:12px;border-radius:6px;overflow-x:auto;font-size:12px">'); inCode = true; }
+      else { out.push(`<pre style="background:${theme.bg};padding:12px;border-radius:6px;overflow-x:auto;font-size:12px">`); inCode = true; }
       continue;
     }
     if (inCode) { out.push(esc(raw)); out.push("\n"); continue; }
 
     const trimmed = raw.trim();
 
-    // Close list if no longer in list context
     if (inList && !trimmed.startsWith("- ") && !trimmed.startsWith("* ") && !/^\d+\.\s/.test(trimmed) && trimmed !== "") {
       out.push(`</${inList}>`); inList = null;
     }
 
-    // HR
     if (/^-{3,}$/.test(trimmed) || /^\*{3,}$/.test(trimmed)) {
-      out.push('<hr style="border:none;border-top:1px solid #1e1e2e;margin:12px 0">');
+      out.push(`<hr style="border:none;border-top:1px solid ${theme.border};margin:12px 0">`);
       continue;
     }
 
-    // Headers
     const hMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (hMatch) {
       const level = hMatch[1].length;
       const sizes = [20, 17, 15, 14, 13, 12];
-      out.push(`<h${level} style="color:#e0e0e8;font-size:${sizes[level - 1]}px;margin:16px 0 8px;font-weight:600">${inlineFmt(hMatch[2])}</h${level}>`);
+      out.push(`<h${level} style="color:${theme.text};font-size:${sizes[level - 1]}px;margin:16px 0 8px;font-weight:600">${inlineFmt(hMatch[2])}</h${level}>`);
       continue;
     }
 
-    // Table
     if (trimmed.startsWith("|")) {
-      if (!inTable) { out.push('<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px">'); inTable = true; }
-      if (/^\|[\s-:|]+\|$/.test(trimmed)) continue; // separator row
+      if (!inTable) { out.push(`<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:12px">`); inTable = true; }
+      if (/^\|[\s-:|]+\|$/.test(trimmed)) continue;
       const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
       out.push("<tr>");
-      cells.forEach((c) => out.push(`<td style="padding:6px 10px;border-bottom:1px solid #1e1e2e;color:#e0e0e8">${inlineFmt(c)}</td>`));
+      cells.forEach((c) => out.push(`<td style="padding:6px 10px;border-bottom:1px solid ${theme.border};color:${theme.text}">${inlineFmt(c)}</td>`));
       out.push("</tr>");
       continue;
     }
     if (inTable && !trimmed.startsWith("|")) { out.push("</table>"); inTable = false; }
 
-    // Unordered list
     if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
       if (inList !== "ul") { if (inList) out.push(`</${inList}>`); out.push('<ul style="margin:4px 0;padding-left:20px">'); inList = "ul"; }
       const content = trimmed.replace(/^[-*]\s+/, "");
-      // Check for checkbox
-      if (content.startsWith("[ ] ")) out.push(`<li style="margin:2px 0;color:#e0e0e8;list-style:none;margin-left:-16px">&#9744; ${inlineFmt(content.slice(4))}</li>`);
-      else if (content.startsWith("[x] ")) out.push(`<li style="margin:2px 0;color:#8888a0;list-style:none;margin-left:-16px;text-decoration:line-through">&#9745; ${inlineFmt(content.slice(4))}</li>`);
-      else out.push(`<li style="margin:2px 0;color:#e0e0e8">${inlineFmt(content)}</li>`);
+      if (content.startsWith("[ ] ")) out.push(`<li style="margin:2px 0;color:${theme.text};list-style:none;margin-left:-16px">&#9744; ${inlineFmt(content.slice(4))}</li>`);
+      else if (content.startsWith("[x] ")) out.push(`<li style="margin:2px 0;color:${theme.textMuted};list-style:none;margin-left:-16px;text-decoration:line-through">&#9745; ${inlineFmt(content.slice(4))}</li>`);
+      else out.push(`<li style="margin:2px 0;color:${theme.text}">${inlineFmt(content)}</li>`);
       continue;
     }
 
-    // Ordered list
     const olMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
     if (olMatch) {
       if (inList !== "ol") { if (inList) out.push(`</${inList}>`); out.push('<ol style="margin:4px 0;padding-left:20px">'); inList = "ol"; }
-      out.push(`<li style="margin:2px 0;color:#e0e0e8">${inlineFmt(olMatch[2])}</li>`);
+      out.push(`<li style="margin:2px 0;color:${theme.text}">${inlineFmt(olMatch[2])}</li>`);
       continue;
     }
 
-    // Empty line
     if (trimmed === "") { out.push("<br>"); continue; }
 
-    // Regular paragraph
-    out.push(`<p style="margin:4px 0;color:#e0e0e8;line-height:1.6">${inlineFmt(trimmed)}</p>`);
+    out.push(`<p style="margin:4px 0;color:${theme.text};line-height:1.6">${inlineFmt(trimmed)}</p>`);
   }
 
   if (inCode) out.push("</pre>");
@@ -477,7 +515,7 @@ function renderMarkdown(md: string): string {
   return out.join("\n");
 }
 
-function DocViewer({ path, onClose }: { path: string; onClose: () => void }) {
+function DocViewer({ path, onClose, theme }: { path: string; onClose: () => void; theme: ThemePalette }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -495,20 +533,20 @@ function DocViewer({ path, onClose }: { path: string; onClose: () => void }) {
   }, [path]);
 
   return (
-    <div style={docStyles.overlay} onClick={onClose}>
-      <div style={docStyles.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={docStyles.modalHeader}>
-          <span style={docStyles.modalTitle}>{path.split("/").pop()}</span>
-          <span style={docStyles.modalPath}>{path}</span>
-          <button style={docStyles.closeBtn} onClick={onClose}>&times;</button>
+    <div style={{ position: "fixed" as const, inset: 0, background: theme.overlay, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div style={{ background: theme.surface, borderRadius: 12, border: `1px solid ${theme.border}`, width: "100%", maxWidth: 800, maxHeight: "85vh", display: "flex", flexDirection: "column" as const }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: `1px solid ${theme.border}` }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{path.split("/").pop()}</span>
+          <span style={{ fontSize: 11, color: theme.textFaint, flex: 1 }}>{path}</span>
+          <button style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 20, cursor: "pointer", fontFamily: "inherit", padding: "0 4px" }} onClick={onClose}>&times;</button>
         </div>
-        <div style={docStyles.modalBody}>
-          {loading && <div style={docStyles.loading}>Loading...</div>}
-          {error && <div style={docStyles.error}>{error}</div>}
+        <div style={{ flex: 1, overflow: "auto", padding: 18 }}>
+          {loading && <div style={{ color: theme.textMuted, fontSize: 13 }}>Loading...</div>}
+          {error && <div style={{ color: theme.error, fontSize: 13 }}>{error}</div>}
           {content && (
             <div
-              style={docStyles.docContent}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+              style={{ color: theme.text, fontSize: 13, lineHeight: 1.6, fontFamily: "inherit" }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(content, theme) }}
             />
           )}
         </div>
@@ -517,91 +555,13 @@ function DocViewer({ path, onClose }: { path: string; onClose: () => void }) {
   );
 }
 
-const docStyles: Record<string, React.CSSProperties> = {
-  fileLink: {
-    background: "none",
-    border: "1px solid #7c3aed",
-    borderRadius: 4,
-    color: "#c4b5fd",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "1px 6px",
-    fontFamily: "inherit",
-    fontWeight: 500,
-    display: "inline",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.7)",
-    zIndex: 300,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modal: {
-    background: "#12121a",
-    borderRadius: 12,
-    border: "1px solid #1e1e2e",
-    width: "100%",
-    maxWidth: 800,
-    maxHeight: "85vh",
-    display: "flex",
-    flexDirection: "column",
-  },
-  modalHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "14px 18px",
-    borderBottom: "1px solid #1e1e2e",
-  },
-  modalTitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  modalPath: {
-    fontSize: 11,
-    color: "#555",
-    flex: 1,
-  },
-  closeBtn: {
-    background: "none",
-    border: "none",
-    color: "#8888a0",
-    fontSize: 20,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    padding: "0 4px",
-  },
-  modalBody: {
-    flex: 1,
-    overflow: "auto",
-    padding: 18,
-  },
-  loading: {
-    color: "#8888a0",
-    fontSize: 13,
-  },
-  error: {
-    color: "#f87171",
-    fontSize: 13,
-  },
-  docContent: {
-    color: "#e0e0e8",
-    fontSize: 13,
-    lineHeight: 1.6,
-    fontFamily: "inherit",
-  },
-};
-
-function CrmChat({ messages, send, context, placeholder }: {
+function CrmChat({ messages, send, context, placeholder, theme }: {
   messages: WsMessage[];
   send: (type: string, payload: Record<string, unknown>) => void;
   context: string;
   placeholder: string;
+  theme: ThemePalette;
+  isDark?: boolean;
 }) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -626,152 +586,59 @@ function CrmChat({ messages, send, context, placeholder }: {
 
   if (!expanded) {
     return (
-      <button style={chatStyles.toggle} onClick={() => setExpanded(true)}>
+      <button style={{
+        position: "sticky" as const, bottom: 0, marginTop: 12,
+        background: theme.border, border: `1px solid ${theme.inputBorder}`,
+        borderRadius: 8, color: theme.accent, cursor: "pointer",
+        fontSize: 12, padding: "10px 16px", fontFamily: "inherit",
+        fontWeight: 500, textAlign: "center" as const, width: "100%",
+      }} onClick={() => setExpanded(true)}>
         Chat with Caul
       </button>
     );
   }
 
   return (
-    <div style={chatStyles.container}>
-      <div style={chatStyles.header}>
-        <span style={chatStyles.headerText}>Chat</span>
-        <button style={chatStyles.collapseBtn} onClick={() => setExpanded(false)}>&minus;</button>
+    <div style={{
+      position: "sticky" as const, bottom: 0, marginTop: 12,
+      background: theme.surface, border: `1px solid ${theme.border}`,
+      borderRadius: 10, display: "flex", flexDirection: "column" as const,
+      maxHeight: 280, minHeight: 160,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: `1px solid ${theme.border}` }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: theme.textMuted, textTransform: "uppercase" as const, letterSpacing: 1 }}>Chat</span>
+        <button style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 16, cursor: "pointer", fontFamily: "inherit", padding: "0 4px" }} onClick={() => setExpanded(false)}>&minus;</button>
       </div>
-      <div style={chatStyles.messageList}>
+      <div style={{ flex: 1, overflow: "auto", padding: "8px 12px", display: "flex", flexDirection: "column" as const, gap: 4 }}>
         {chatMessages.map((m, i) => (
-          <div key={i} style={{ ...chatStyles.msg, ...(m.from === "user" ? chatStyles.msgUser : chatStyles.msgAssistant) }}>
-            <span style={chatStyles.msgText}>{m.text.replace(/^\[CRM:.*?\]\s*/, "")}</span>
+          <div key={i} style={{
+            padding: "4px 8px", borderRadius: 6, fontSize: 12, maxWidth: "85%", lineHeight: 1.4,
+            ...(m.from === "user"
+              ? { background: theme.border, color: theme.accent, alignSelf: "flex-end" as const }
+              : { background: theme.bg, color: theme.text, alignSelf: "flex-start" as const }),
+          }}>
+            <span style={{ whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const }}>{m.text.replace(/^\[CRM:.*?\]\s*/, "")}</span>
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
-      <div style={chatStyles.inputRow}>
+      <div style={{ display: "flex", gap: 8, padding: "8px 12px", borderTop: `1px solid ${theme.border}` }}>
         <input
-          style={chatStyles.input}
+          style={{ flex: 1, background: theme.bg, border: `1px solid ${theme.inputBorder}`, borderRadius: 6, color: theme.text, padding: "8px 10px", fontSize: 12, fontFamily: "inherit", outline: "none" }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder={placeholder}
         />
-        <button style={chatStyles.sendBtn} onClick={handleSend}>&rarr;</button>
+        <button style={{ background: theme.buttonBg, border: "none", borderRadius: 6, color: theme.buttonText, cursor: "pointer", fontSize: 14, padding: "6px 12px", fontFamily: "inherit", fontWeight: 600 }} onClick={handleSend}>&rarr;</button>
       </div>
     </div>
   );
 }
 
-const chatStyles: Record<string, React.CSSProperties> = {
-  toggle: {
-    position: "sticky",
-    bottom: 0,
-    marginTop: 12,
-    background: "#1e1e2e",
-    border: "1px solid #333",
-    borderRadius: 8,
-    color: "#c4b5fd",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "10px 16px",
-    fontFamily: "inherit",
-    fontWeight: 500,
-    textAlign: "center",
-    width: "100%",
-  },
-  container: {
-    position: "sticky",
-    bottom: 0,
-    marginTop: 12,
-    background: "#12121a",
-    border: "1px solid #1e1e2e",
-    borderRadius: 10,
-    display: "flex",
-    flexDirection: "column",
-    maxHeight: 280,
-    minHeight: 160,
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "8px 12px",
-    borderBottom: "1px solid #1e1e2e",
-  },
-  headerText: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#8888a0",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  collapseBtn: {
-    background: "none",
-    border: "none",
-    color: "#8888a0",
-    fontSize: 16,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    padding: "0 4px",
-  },
-  messageList: {
-    flex: 1,
-    overflow: "auto",
-    padding: "8px 12px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  },
-  msg: {
-    padding: "4px 8px",
-    borderRadius: 6,
-    fontSize: 12,
-    maxWidth: "85%",
-    lineHeight: 1.4,
-  },
-  msgUser: {
-    background: "#1e1e2e",
-    color: "#c4b5fd",
-    alignSelf: "flex-end",
-  },
-  msgAssistant: {
-    background: "#0a0a0f",
-    color: "#e0e0e8",
-    alignSelf: "flex-start",
-  },
-  msgText: {
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  },
-  inputRow: {
-    display: "flex",
-    gap: 8,
-    padding: "8px 12px",
-    borderTop: "1px solid #1e1e2e",
-  },
-  input: {
-    flex: 1,
-    background: "#0a0a0f",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#e0e0e8",
-    padding: "8px 10px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  sendBtn: {
-    background: "#7c3aed",
-    border: "none",
-    borderRadius: 6,
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: 14,
-    padding: "6px 12px",
-    fontFamily: "inherit",
-    fontWeight: 600,
-  },
-};
-
 function ContactForm(props: {
+  theme: ThemePalette;
+  isDark: boolean;
   name: string; setName: (v: string) => void;
   email: string; setEmail: (v: string) => void;
   phone: string; setPhone: (v: string) => void;
@@ -782,436 +649,76 @@ function ContactForm(props: {
   onSubmit: () => void;
   submitLabel: string;
 }) {
+  const { theme } = props;
+  const inputStyle: React.CSSProperties = {
+    background: theme.bg,
+    border: `1px solid ${theme.inputBorder}`,
+    borderRadius: 6,
+    color: theme.text,
+    padding: "8px 10px",
+    fontSize: 13,
+    fontFamily: "inherit",
+    outline: "none",
+  };
+
   return (
-    <div style={styles.formGrid}>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Name *</label>
-        <input style={styles.formInput} value={props.name} onChange={(e) => props.setName(e.target.value)} autoFocus />
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Name *</label>
+        <input style={inputStyle} value={props.name} onChange={(e) => props.setName(e.target.value)} autoFocus />
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Email</label>
-        <input style={styles.formInput} value={props.email} onChange={(e) => props.setEmail(e.target.value)} />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Email</label>
+        <input style={inputStyle} value={props.email} onChange={(e) => props.setEmail(e.target.value)} />
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Phone</label>
-        <input style={styles.formInput} value={props.phone} onChange={(e) => props.setPhone(e.target.value)} />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Phone</label>
+        <input style={inputStyle} value={props.phone} onChange={(e) => props.setPhone(e.target.value)} />
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Context</label>
-        <input style={styles.formInput} value={props.context} onChange={(e) => props.setContext(e.target.value)} placeholder="How you know them / who they are" />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Context</label>
+        <input style={inputStyle} value={props.context} onChange={(e) => props.setContext(e.target.value)} placeholder="How you know them / who they are" />
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Tags</label>
-        <input style={styles.formInput} value={props.tags} onChange={(e) => props.setTags(e.target.value)} placeholder="comma-separated: friend, professional" />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Tags</label>
+        <input style={inputStyle} value={props.tags} onChange={(e) => props.setTags(e.target.value)} placeholder="comma-separated: friend, professional" />
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Source</label>
-        <div style={styles.sourceRow}>
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Source</label>
+        <div style={{ display: "flex", gap: 8 }}>
           {["manual", "conversation", "research"].map((s) => (
             <button
               key={s}
-              style={{ ...styles.sourceBtn, ...(props.source === s ? styles.sourceBtnActive : {}) }}
+              style={{
+                background: props.source === s ? theme.buttonBg : "none",
+                borderColor: props.source === s ? theme.buttonBg : theme.inputBorder,
+                border: `1px solid ${props.source === s ? theme.buttonBg : theme.inputBorder}`,
+                borderRadius: 6,
+                color: props.source === s ? theme.buttonText : theme.textMuted,
+                cursor: "pointer", fontSize: 11, padding: "4px 12px",
+                fontFamily: "inherit", fontWeight: 500,
+              }}
               onClick={() => props.setSource(s)}
             >{s}</button>
           ))}
         </div>
       </div>
-      <div style={styles.formRow}>
-        <label style={styles.formLabel}>Notes</label>
-        <textarea style={styles.formTextarea} value={props.notes} onChange={(e) => props.setNotes(e.target.value)} rows={4} placeholder="Freeform notes..." />
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        <label style={{ fontSize: 11, color: theme.textMuted, fontWeight: 500, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>Notes</label>
+        <textarea style={{ ...inputStyle, resize: "vertical" as const }} value={props.notes} onChange={(e) => props.setNotes(e.target.value)} rows={4} placeholder="Freeform notes..." />
       </div>
-      <button style={styles.submitBtn} onClick={props.onSubmit}>{props.submitLabel}</button>
+      <button style={{ background: theme.buttonBg, border: "none", borderRadius: 6, color: theme.buttonText, cursor: "pointer", fontSize: 13, padding: "10px 20px", fontFamily: "inherit", fontWeight: 600, marginTop: 4 }} onClick={props.onSubmit}>{props.submitLabel}</button>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    padding: 20,
-    height: "100%",
-    overflow: "auto",
-    display: "flex",
-    flexDirection: "column",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 16,
-  },
-  heading: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  count: {
-    fontSize: 12,
-    color: "#8888a0",
-  },
-  addBtn: {
-    marginLeft: "auto",
-    background: "#7c3aed",
-    border: "none",
-    borderRadius: 6,
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "6px 16px",
-    fontFamily: "inherit",
-    fontWeight: 600,
-  },
-  filterRow: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    marginBottom: 16,
-  },
-  searchInput: {
-    background: "#12121a",
-    border: "1px solid #1e1e2e",
-    borderRadius: 8,
-    color: "#e0e0e8",
-    padding: "10px 14px",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  tagFilter: {
-    display: "flex",
-    gap: 6,
-    flexWrap: "wrap",
-  },
-  filterChip: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: 12,
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 11,
-    padding: "3px 10px",
-    fontFamily: "inherit",
-  },
-  filterChipActive: {
-    background: "#1e1e2e",
-    color: "#c4b5fd",
-    borderColor: "#7c3aed",
-  },
-  contactList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    flex: 1,
-    overflow: "auto",
-  },
-  contactCard: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "12px 14px",
-    background: "#12121a",
-    border: "1px solid #1e1e2e",
-    borderRadius: 10,
-    cursor: "pointer",
-    textAlign: "left",
-    fontFamily: "inherit",
-    color: "#e0e0e8",
-  },
-  cardAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: "50%",
-    background: "linear-gradient(135deg, #7c3aed, #c4b5fd)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 14,
-    color: "#fff",
-    flexShrink: 0,
-  },
-  cardInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardName: {
-    fontSize: 14,
-    fontWeight: 600,
-    marginBottom: 2,
-  },
-  cardContext: {
-    fontSize: 11,
-    color: "#8888a0",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  cardTags: {
-    display: "flex",
-    gap: 6,
-    marginTop: 4,
-  },
-  cardTag: {
-    fontSize: 10,
-    fontWeight: 500,
-  },
-  cardMeta: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 2,
-    flexShrink: 0,
-  },
-  cardDate: {
-    fontSize: 10,
-    color: "#555",
-  },
-  cardSource: {
-    fontSize: 9,
-    color: "#555",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  empty: {
-    color: "#8888a0",
-    fontSize: 13,
-    padding: "40px 0",
-    textAlign: "center",
-  },
-  backBtn: {
-    background: "none",
-    border: "none",
-    color: "#c4b5fd",
-    fontSize: 13,
-    cursor: "pointer",
-    padding: "4px 0",
-    marginBottom: 16,
-    fontFamily: "inherit",
-    textAlign: "left",
-  },
-  detailCard: {
-    background: "#12121a",
-    borderRadius: 12,
-    padding: 20,
-  },
-  detailHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 20,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: "50%",
-    background: "linear-gradient(135deg, #7c3aed, #c4b5fd)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 22,
-    color: "#fff",
-    flexShrink: 0,
-  },
-  detailName: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  detailAliases: {
-    fontSize: 12,
-    color: "#8888a0",
-    marginTop: 2,
-  },
-  detailMeta: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    marginBottom: 16,
-  },
-  metaRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "6px 0",
-    borderBottom: "1px solid #1e1e2e",
-    fontSize: 13,
-  },
-  metaLabel: {
-    color: "#8888a0",
-    fontWeight: 500,
-  },
-  metaValue: {
-    color: "#e0e0e8",
-  },
-  tagRow: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
-  tag: {
-    border: "1px solid",
-    borderRadius: 12,
-    fontSize: 11,
-    padding: "3px 10px",
-    fontWeight: 500,
-  },
-  connectionsSection: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#8888a0",
-    marginBottom: 8,
-    marginTop: 0,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  connectionRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "6px 0",
-    borderBottom: "1px solid #1e1e2e",
-    fontSize: 13,
-  },
-  connectionName: {
-    color: "#c4b5fd",
-    fontWeight: 500,
-  },
-  connectionRel: {
-    color: "#8888a0",
-  },
-  notesSection: {
-    marginBottom: 16,
-  },
-  notesContent: {
-    fontSize: 13,
-    color: "#e0e0e8",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap",
-    background: "#0a0a0f",
-    borderRadius: 8,
-    padding: 12,
-  },
-  detailActions: {
-    display: "flex",
-    gap: 8,
-    marginTop: 16,
-  },
-  btnEdit: {
-    background: "#1e1e2e",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#c4b5fd",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "8px 20px",
-    fontFamily: "inherit",
-    fontWeight: 500,
-  },
-  btnDelete: {
-    background: "none",
-    border: "1px solid #4a1a1a",
-    borderRadius: 6,
-    color: "#f87171",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "8px 20px",
-    fontFamily: "inherit",
-    marginLeft: "auto",
-  },
-  addFormContainer: {
-    background: "#12121a",
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  addFormTitle: {
-    margin: "0 0 16px",
-    fontSize: 15,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  cancelFormBtn: {
-    background: "none",
-    border: "none",
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 12,
-    padding: "8px 0",
-    fontFamily: "inherit",
-    marginTop: 8,
-  },
-  formGrid: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  formRow: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  },
-  formLabel: {
-    fontSize: 11,
-    color: "#8888a0",
-    fontWeight: 500,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  formInput: {
-    background: "#0a0a0f",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#e0e0e8",
-    padding: "8px 10px",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  formTextarea: {
-    background: "#0a0a0f",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#e0e0e8",
-    padding: "8px 10px",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-    resize: "vertical",
-  },
-  sourceRow: {
-    display: "flex",
-    gap: 8,
-  },
-  sourceBtn: {
-    background: "none",
-    border: "1px solid #333",
-    borderRadius: 6,
-    color: "#8888a0",
-    cursor: "pointer",
-    fontSize: 11,
-    padding: "4px 12px",
-    fontFamily: "inherit",
-    fontWeight: 500,
-  },
-  sourceBtnActive: {
-    background: "#7c3aed",
-    borderColor: "#7c3aed",
-    color: "#fff",
-  },
-  submitBtn: {
-    background: "#7c3aed",
-    border: "none",
-    borderRadius: 6,
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: 13,
-    padding: "10px 20px",
-    fontFamily: "inherit",
-    fontWeight: 600,
-    marginTop: 4,
-  },
-};
+// R404: Self-register as sidebar skill at module scope
+registerSkill({
+  id: "crm",
+  name: "People",
+  icon: "&",
+  surface: "sidebar",
+  component: CrmView as React.ComponentType<ViewProps>,
+  order: 60,
+  core: false,
+});

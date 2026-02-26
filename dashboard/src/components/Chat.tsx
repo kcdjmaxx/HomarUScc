@@ -1,5 +1,7 @@
-// CRC: crc-DashboardFrontend.md | Seq: seq-event-flow.md
+// CRC: crc-DashboardFrontend.md | CRC: crc-ThemeProvider.md | Seq: seq-event-flow.md
 import { useState, useRef, useEffect, useMemo } from "react";
+import { useTheme } from "../theme";
+import { registerSkill, type ViewProps } from "../skills-registry";
 
 interface WsMessage {
   type: string;
@@ -17,9 +19,11 @@ interface Props {
   send: (type: string, payload: unknown) => void;
 }
 
+// R358: Chat view with theme colors
 export function Chat({ messages, send }: Props) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
 
   const chatMessages = useMemo(() => {
     return messages
@@ -38,15 +42,24 @@ export function Chat({ messages, send }: Props) {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Chat</h2>
-        <span style={styles.subtitle}>Messages flow through Claude Code via MCP</span>
+    <div style={{ display: "flex", flexDirection: "column" as const, height: "100%" }}>
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${theme.border}` }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: theme.text }}>Chat</h2>
+        <span style={{ fontSize: 11, color: theme.textFaint, marginTop: 2, display: "block" }}>
+          Messages flow through Claude Code via MCP
+        </span>
       </div>
 
-      <div style={styles.messages}>
+      <div style={{
+        flex: 1,
+        overflow: "auto",
+        padding: "16px 20px",
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 8,
+      }}>
         {chatMessages.length === 0 && (
-          <div style={styles.empty}>
+          <div style={{ color: theme.textFaint, fontSize: 13, textAlign: "center" as const, marginTop: 40 }}>
             No messages yet. Send a message to interact with Claude Code.
           </div>
         )}
@@ -54,17 +67,26 @@ export function Chat({ messages, send }: Props) {
           const isUser = msg.from === "user" || msg.from === "dashboard-user";
           return (
           <div key={i} style={{
-            ...styles.message,
+            maxWidth: "80%",
+            display: "flex",
             alignSelf: isUser ? "flex-end" : "flex-start",
           }}>
             <div style={{
-              ...styles.bubble,
-              background: isUser ? "#2e1065" : "#1e1e2e",
-              borderColor: isUser ? "#7c3aed" : "#2e2e3e",
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid",
+              fontSize: 13,
+              lineHeight: 1.5,
+              background: isUser ? theme.userBubbleBg : theme.border,
+              borderColor: isUser ? theme.userBubbleBorder : theme.inputBorder,
             }}>
-              <div style={styles.msgFrom}>{isUser ? "you" : msg.from}</div>
-              <div style={styles.msgText}>{msg.text}</div>
-              <div style={styles.msgTime}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, marginBottom: 2 }}>
+                {isUser ? "you" : msg.from}
+              </div>
+              <div style={{ color: theme.text, whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const }}>
+                {msg.text}
+              </div>
+              <div style={{ fontSize: 10, color: theme.textFaint, marginTop: 4, textAlign: "right" as const }}>
                 {new Date(msg.timestamp).toLocaleTimeString()}
               </div>
             </div>
@@ -74,15 +96,41 @@ export function Chat({ messages, send }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      <div style={styles.inputArea}>
+      <div style={{
+        display: "flex",
+        gap: 8,
+        padding: "12px 20px",
+        borderTop: `1px solid ${theme.border}`,
+        background: theme.bg,
+      }}>
         <input
-          style={styles.input}
+          style={{
+            flex: 1,
+            padding: "10px 14px",
+            background: theme.inputBg,
+            border: `1px solid ${theme.inputBorder}`,
+            borderRadius: 8,
+            color: theme.text,
+            fontSize: 13,
+            fontFamily: "inherit",
+            outline: "none",
+          }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Type a message..."
         />
-        <button style={styles.sendBtn} onClick={handleSend}>
+        <button style={{
+          padding: "10px 20px",
+          background: theme.buttonBg,
+          color: theme.buttonText,
+          border: "none",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontWeight: 600,
+          fontSize: 13,
+          fontFamily: "inherit",
+        }} onClick={handleSend}>
           Send
         </button>
       </div>
@@ -90,97 +138,13 @@ export function Chat({ messages, send }: Props) {
   );
 }
 
-const styles = {
-  container: {
-    display: "flex",
-    flexDirection: "column" as const,
-    height: "100%",
-  },
-  header: {
-    padding: "16px 20px",
-    borderBottom: "1px solid #1e1e2e",
-  },
-  title: {
-    margin: 0,
-    fontSize: 16,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  subtitle: {
-    fontSize: 11,
-    color: "#6b6b80",
-    marginTop: 2,
-    display: "block",
-  },
-  messages: {
-    flex: 1,
-    overflow: "auto",
-    padding: "16px 20px",
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 8,
-  },
-  empty: {
-    color: "#6b6b80",
-    fontSize: 13,
-    textAlign: "center" as const,
-    marginTop: 40,
-  },
-  message: {
-    maxWidth: "80%",
-    display: "flex",
-  },
-  bubble: {
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid",
-    fontSize: 13,
-    lineHeight: 1.5,
-  },
-  msgFrom: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: "#8888a0",
-    marginBottom: 2,
-  },
-  msgText: {
-    color: "#e0e0e8",
-    whiteSpace: "pre-wrap" as const,
-    wordBreak: "break-word" as const,
-  },
-  msgTime: {
-    fontSize: 10,
-    color: "#555568",
-    marginTop: 4,
-    textAlign: "right" as const,
-  },
-  inputArea: {
-    display: "flex",
-    gap: 8,
-    padding: "12px 20px",
-    borderTop: "1px solid #1e1e2e",
-    background: "#0e0e16",
-  },
-  input: {
-    flex: 1,
-    padding: "10px 14px",
-    background: "#1a1a24",
-    border: "1px solid #2e2e3e",
-    borderRadius: 8,
-    color: "#e0e0e8",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  sendBtn: {
-    padding: "10px 20px",
-    background: "#7c3aed",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: 13,
-    fontFamily: "inherit",
-  },
-};
+// R404: Self-register as sidebar skill at module scope
+registerSkill({
+  id: "chat",
+  name: "Chat",
+  icon: ">",
+  surface: "sidebar",
+  component: Chat as React.ComponentType<ViewProps>,
+  order: 10,
+  core: true,
+});

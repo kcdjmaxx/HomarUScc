@@ -1,5 +1,7 @@
-// CRC: crc-DashboardFrontend.md
+// CRC: crc-DashboardFrontend.md | CRC: crc-ThemeProvider.md
 import { useState, useMemo } from "react";
+import { useTheme } from "../theme";
+import { registerSkill, type ViewProps } from "../skills-registry";
 
 interface WsMessage {
   type: string;
@@ -18,8 +20,10 @@ interface Props {
   messages: WsMessage[];
 }
 
+// R361: MemoryBrowser with theme colors
 export function MemoryBrowser({ send, messages }: Props) {
   const [query, setQuery] = useState("");
+  const { theme } = useTheme();
 
   const results = useMemo(() => {
     const searchMsgs = messages.filter((m) => m.type === "search_results");
@@ -33,37 +37,73 @@ export function MemoryBrowser({ send, messages }: Props) {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Memory Browser</h2>
+    <div style={{ display: "flex", flexDirection: "column" as const, height: "100%" }}>
+      <div style={{ padding: "16px 20px 0" }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Memory Browser</h2>
       </div>
 
-      <div style={styles.searchBar}>
+      <div style={{ display: "flex", gap: 8, padding: "12px 20px" }}>
         <input
-          style={styles.input}
+          style={{
+            flex: 1,
+            padding: "10px 14px",
+            background: theme.inputBg,
+            border: `1px solid ${theme.inputBorder}`,
+            borderRadius: 8,
+            color: theme.text,
+            fontSize: 13,
+            fontFamily: "inherit",
+            outline: "none",
+          }}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           placeholder="Search memory (hybrid vector + FTS)..."
         />
-        <button style={styles.searchBtn} onClick={handleSearch}>
+        <button style={{
+          padding: "10px 20px",
+          background: theme.buttonBg,
+          color: theme.buttonText,
+          border: "none",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontWeight: 600,
+          fontSize: 13,
+          fontFamily: "inherit",
+        }} onClick={handleSearch}>
           Search
         </button>
       </div>
 
-      <div style={styles.results}>
+      <div style={{ flex: 1, overflow: "auto", padding: "0 20px 20px" }}>
         {results.length === 0 && (
-          <div style={styles.empty}>
+          <div style={{ color: theme.textFaint, fontSize: 13, textAlign: "center" as const, marginTop: 40 }}>
             Enter a query to search the memory index
           </div>
         )}
         {results.map((r, i) => (
-          <div key={i} style={styles.result}>
-            <div style={styles.resultHeader}>
-              <span style={styles.path}>{r.path}</span>
-              <span style={styles.score}>score: {r.score.toFixed(3)}</span>
+          <div key={i} style={{ padding: "12px 0", borderBottom: `1px solid ${theme.borderSubtle}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: theme.accent }}>{r.path}</span>
+              <span style={{
+                fontSize: 10,
+                color: theme.textFaint,
+                background: theme.inputBg,
+                padding: "2px 6px",
+                borderRadius: 4,
+              }}>score: {r.score.toFixed(3)}</span>
             </div>
-            <pre style={styles.content}>{r.content.slice(0, 500)}</pre>
+            <pre style={{
+              margin: 0,
+              fontSize: 11,
+              color: theme.textMuted,
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap" as const,
+              wordBreak: "break-word" as const,
+              maxHeight: 120,
+              overflow: "hidden",
+              fontFamily: "inherit",
+            }}>{r.content.slice(0, 500)}</pre>
           </div>
         ))}
       </div>
@@ -71,89 +111,13 @@ export function MemoryBrowser({ send, messages }: Props) {
   );
 }
 
-const styles = {
-  container: {
-    display: "flex",
-    flexDirection: "column" as const,
-    height: "100%",
-  },
-  header: {
-    padding: "16px 20px 0",
-  },
-  title: {
-    margin: 0,
-    fontSize: 16,
-    fontWeight: 600,
-  },
-  searchBar: {
-    display: "flex",
-    gap: 8,
-    padding: "12px 20px",
-  },
-  input: {
-    flex: 1,
-    padding: "10px 14px",
-    background: "#1a1a24",
-    border: "1px solid #2e2e3e",
-    borderRadius: 8,
-    color: "#e0e0e8",
-    fontSize: 13,
-    fontFamily: "inherit",
-    outline: "none",
-  },
-  searchBtn: {
-    padding: "10px 20px",
-    background: "#7c3aed",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: 13,
-    fontFamily: "inherit",
-  },
-  results: {
-    flex: 1,
-    overflow: "auto",
-    padding: "0 20px 20px",
-  },
-  empty: {
-    color: "#6b6b80",
-    fontSize: 13,
-    textAlign: "center" as const,
-    marginTop: 40,
-  },
-  result: {
-    padding: "12px 0",
-    borderBottom: "1px solid #1a1a24",
-  },
-  resultHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  path: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#c4b5fd",
-  },
-  score: {
-    fontSize: 10,
-    color: "#6b6b80",
-    background: "#1a1a24",
-    padding: "2px 6px",
-    borderRadius: 4,
-  },
-  content: {
-    margin: 0,
-    fontSize: 11,
-    color: "#8888a0",
-    lineHeight: 1.5,
-    whiteSpace: "pre-wrap" as const,
-    wordBreak: "break-word" as const,
-    maxHeight: 120,
-    overflow: "hidden",
-    fontFamily: "inherit",
-  },
-};
+// R404: Self-register as sidebar skill at module scope
+registerSkill({
+  id: "memory",
+  name: "Memory",
+  icon: "@",
+  surface: "sidebar",
+  component: MemoryBrowser as React.ComponentType<ViewProps>,
+  order: 40,
+  core: false,
+});

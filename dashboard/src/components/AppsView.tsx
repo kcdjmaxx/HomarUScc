@@ -1,5 +1,7 @@
-// CRC: crc-AppsFrontend.md
+// CRC: crc-AppsFrontend.md | CRC: crc-ThemeProvider.md
 import { useEffect, useState } from "react";
+import { useTheme } from "../theme";
+import { registerSkill, type ViewProps } from "../skills-registry";
 
 interface AppManifest {
   name: string;
@@ -7,14 +9,17 @@ interface AppManifest {
   description: string;
   version: string;
   icon?: string;
+  hasIndex?: boolean;
 }
 
-// Apps that have dedicated sidebar views — hide from generic list
+// Apps that have dedicated sidebar views -- hide from generic list
 const DEDICATED_VIEWS = new Set(["kanban"]);
 
 const apiBase = `http://${window.location.hostname}:${window.location.port || 3120}`;
 
+// R364: AppsView with theme colors
 export function AppsView() {
+  const { theme } = useTheme();
   const [apps, setApps] = useState<AppManifest[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [appData, setAppData] = useState<Record<string, unknown> | null>(null);
@@ -38,8 +43,17 @@ export function AppsView() {
 
   if (selected && selectedApp) {
     return (
-      <div style={styles.container}>
-        <button onClick={() => setSelected(null)} style={styles.backBtn}>
+      <div style={{ flex: 1, padding: 24, overflowY: "auto" as const, display: "flex", flexDirection: "column" as const }}>
+        <button onClick={() => setSelected(null)} style={{
+          background: "none",
+          border: "none",
+          color: theme.accent,
+          fontSize: 13,
+          cursor: "pointer",
+          padding: "4px 0",
+          marginBottom: 16,
+          fontFamily: "inherit",
+        }}>
           &larr; All Apps
         </button>
         <AppRenderer app={selectedApp} data={appData} />
@@ -48,31 +62,48 @@ export function AppsView() {
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Apps</h2>
-        <span style={styles.count}>{apps.length} installed</span>
+    <div style={{ flex: 1, padding: 24, overflowY: "auto" as const }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 24 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: theme.text }}>Apps</h2>
+        <span style={{ fontSize: 12, color: theme.textMuted }}>{apps.length} installed</span>
       </div>
       {apps.length === 0 && (
-        <div style={styles.empty}>No apps installed. Ask Caul to build one.</div>
+        <div style={{ color: theme.textMuted, fontSize: 13, padding: "40px 0", textAlign: "center" as const }}>
+          No apps installed. Ask Caul to build one.
+        </div>
       )}
-      <div style={styles.grid}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
         {apps.map((app) => (
           <button
             key={app.slug}
             onClick={() => setSelected(app.slug)}
-            style={styles.card}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              padding: 16,
+              background: theme.surface,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              cursor: "pointer",
+              textAlign: "left" as const,
+              fontFamily: "inherit",
+              color: theme.text,
+              transition: "border-color 0.15s",
+            }}
           >
             {app.icon && (
               <img
                 src={`${apiBase}/api/apps/${app.slug}/static/${app.icon}`}
                 alt={app.name}
-                style={styles.icon}
+                style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" as const }}
               />
             )}
-            <div style={styles.cardText}>
-              <div style={styles.cardName}>{app.name}</div>
-              <div style={styles.cardDesc}>{app.description}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{app.name}</div>
+              <div style={{ fontSize: 11, color: theme.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                {app.description}
+              </div>
             </div>
           </button>
         ))}
@@ -82,29 +113,40 @@ export function AppsView() {
 }
 
 function AppRenderer({ app, data }: { app: AppManifest; data: Record<string, unknown> | null }) {
-  // For now, render app data as a simple view. Dynamic component loading comes later.
+  const { theme } = useTheme();
+
+  if (app.hasIndex) {
+    return (
+      <iframe
+        src={`${apiBase}/api/apps/${app.slug}/static/index.html`}
+        style={{ width: "100%", flex: 1, border: "none", background: theme.bg, display: "block", minHeight: 0 }}
+        title={app.name}
+      />
+    );
+  }
+
   return (
-    <div style={styles.appContainer}>
-      <div style={styles.appHeader}>
+    <div style={{ maxWidth: 600, margin: "0 auto", textAlign: "center" as const }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 16 }}>
         {app.icon && (
           <img
             src={`${apiBase}/api/apps/${app.slug}/static/${app.icon}`}
             alt={app.name}
-            style={styles.appIcon}
+            style={{ width: 80, height: 80, borderRadius: 12, objectFit: "cover" as const }}
           />
         )}
         <div>
-          <h2 style={styles.appTitle}>{app.name}</h2>
-          <span style={styles.appVersion}>v{app.version}</span>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: theme.text }}>{app.name}</h2>
+          <span style={{ fontSize: 11, color: theme.textMuted }}>v{app.version}</span>
         </div>
       </div>
-      <p style={styles.appDesc}>{app.description}</p>
+      <p style={{ color: theme.textMuted, fontSize: 13, marginBottom: 24 }}>{app.description}</p>
       {data && (
-        <div style={styles.dataSection}>
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 16, textAlign: "left" as const }}>
           {Object.entries(data).map(([key, value]) => (
-            <div key={key} style={styles.dataRow}>
-              <span style={styles.dataKey}>{key}</span>
-              <span style={styles.dataValue}>{String(value)}</span>
+            <div key={key} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 13 }}>
+              <span style={{ color: theme.accent, fontWeight: 500 }}>{key}</span>
+              <span style={{ color: theme.text }}>{String(value)}</span>
             </div>
           ))}
         </div>
@@ -113,137 +155,13 @@ function AppRenderer({ app, data }: { app: AppManifest; data: Record<string, unk
   );
 }
 
-const styles = {
-  container: {
-    flex: 1,
-    padding: 24,
-    overflowY: "auto" as const,
-  },
-  header: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 12,
-    marginBottom: 24,
-  },
-  title: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  count: {
-    fontSize: 12,
-    color: "#8888a0",
-  },
-  empty: {
-    color: "#8888a0",
-    fontSize: 13,
-    padding: "40px 0",
-    textAlign: "center" as const,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 16,
-  },
-  card: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-    padding: 16,
-    background: "#12121a",
-    border: "1px solid #1e1e2e",
-    borderRadius: 10,
-    cursor: "pointer",
-    textAlign: "left" as const,
-    fontFamily: "inherit",
-    color: "#e0e0e8",
-    transition: "border-color 0.15s",
-  },
-  icon: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    objectFit: "cover" as const,
-  },
-  cardText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardName: {
-    fontSize: 14,
-    fontWeight: 600,
-    marginBottom: 4,
-  },
-  cardDesc: {
-    fontSize: 11,
-    color: "#8888a0",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  backBtn: {
-    background: "none",
-    border: "none",
-    color: "#c4b5fd",
-    fontSize: 13,
-    cursor: "pointer",
-    padding: "4px 0",
-    marginBottom: 16,
-    fontFamily: "inherit",
-  },
-  appContainer: {
-    maxWidth: 600,
-    margin: "0 auto",
-    textAlign: "center" as const,
-  },
-  appHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-    marginBottom: 16,
-  },
-  appIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    objectFit: "cover" as const,
-  },
-  appTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 600,
-    color: "#e0e0e8",
-  },
-  appVersion: {
-    fontSize: 11,
-    color: "#8888a0",
-  },
-  appDesc: {
-    color: "#8888a0",
-    fontSize: 13,
-    marginBottom: 24,
-  },
-  dataSection: {
-    background: "#12121a",
-    border: "1px solid #1e1e2e",
-    borderRadius: 10,
-    padding: 16,
-    textAlign: "left" as const,
-  },
-  dataRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "8px 0",
-    borderBottom: "1px solid #1e1e2e",
-    fontSize: 13,
-  },
-  dataKey: {
-    color: "#c4b5fd",
-    fontWeight: 500,
-  },
-  dataValue: {
-    color: "#e0e0e8",
-  },
-};
+// R404: Self-register as sidebar skill at module scope (R420: ignores ViewProps)
+registerSkill({
+  id: "apps",
+  name: "Apps",
+  icon: "+",
+  surface: "sidebar",
+  component: AppsView as unknown as React.ComponentType<ViewProps>,
+  order: 80,
+  core: false,
+});
