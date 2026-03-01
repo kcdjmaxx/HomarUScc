@@ -6,6 +6,7 @@ import type { Logger } from "./types.js";
 
 export interface CommandContext {
   getStatus: () => Record<string, unknown>;
+  getCompactionStats: () => { count: number; loopFailures: number; pending: unknown };
   getLastWaitPoll: () => number;
   projectDir: string;
   sendTelegram: (chatId: string, text: string) => Promise<void>;
@@ -75,6 +76,12 @@ export class TelegramCommandHandler {
         `\u{1F9E0} Memory: ${memory?.fileCount ?? 0} files, ${memory?.chunkCount ?? 0} chunks`,
       ];
       return lines.join("\n");
+    });
+
+    // /compaction — show compaction counter
+    this.register("compaction", async (_chatId, _args, ctx) => {
+      const stats = ctx.getCompactionStats();
+      return `Compactions this session: ${stats.count}\nLoop failures: ${stats.loopFailures}${stats.pending ? "\n\u26a0\ufe0f Compaction pending" : ""}`;
     });
 
     // /restart — kill claude and start new session

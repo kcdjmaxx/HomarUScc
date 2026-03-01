@@ -126,10 +126,16 @@ export interface ConfigData {
   toolPolicies?: ToolPolicyConfig[];
   agents?: AgentsConfig;
   spaces?: SpacesConfig;
+  homeAssistant?: HomeAssistantConfig;
 }
 
 export interface SpacesConfig {
   path?: string;
+}
+
+export interface HomeAssistantConfig {
+  url: string;
+  tokenPath: string;
 }
 
 export interface AgentsConfig {
@@ -181,6 +187,20 @@ export interface MemoryConfig {
     patterns?: string[];
   };
   extraPaths?: string[];
+  // V34: Vault indexer configuration
+  vault?: {
+    vaultPath?: string;
+    exclusions?: string[];
+    dbPath?: string;
+    autoReindex?: boolean;
+    reindexIntervalMs?: number;
+    unifiedWeights?: {
+      memory?: number;
+      vaultCollaborative?: number;
+      vaultUnmediated?: number;
+      vaultDream?: number;
+    };
+  };
 }
 
 export interface SkillsConfig {

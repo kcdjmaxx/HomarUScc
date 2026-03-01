@@ -15,6 +15,10 @@ import "./components/CrmView";
 import "./components/SpacesView";
 import "./components/AppsView";
 
+// R404: Dynamically load plugin frontend components (gitignored, per-user)
+const pluginModules = import.meta.glob("./plugins/*.tsx", { eager: true });
+void pluginModules; // side-effect imports trigger registerSkill
+
 const wsUrl = `ws://${window.location.hostname}:${window.location.port || 3120}`;
 const apiBase = `http://${window.location.hostname}:${window.location.port || 3120}`;
 
@@ -39,7 +43,10 @@ export function App() {
 
 // R356, R410, R411: Use theme colors, registry-driven view switching
 function AppInner() {
-  const [view, setView] = useState<string>(getDefaultViewId());
+  const [view, setView] = useState<string>(() => {
+    const saved = localStorage.getItem("homaruscc-active-view");
+    return saved || getDefaultViewId();
+  });
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const { connected, messages, send } = useWebSocket(wsUrl);
@@ -75,6 +82,7 @@ function AppInner() {
 
   const handleViewChange = (v: string) => {
     setView(v);
+    localStorage.setItem("homaruscc-active-view", v);
     if (isMobile) setSidebarOpen(false);
   };
 

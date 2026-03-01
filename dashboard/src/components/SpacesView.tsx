@@ -506,8 +506,8 @@ export function SpacesView({ messages, send }: SpacesViewProps) {
 
           <button
             style={{ background: "none", border: "none", color: theme.text, cursor: "pointer", fontSize: 13, fontFamily: "inherit", textAlign: "left" as const, padding: 0, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}
-            onClick={() => startEdit(item)}
-            title="Click to edit"
+            onClick={() => item.body ? setExpandedItem(isExpanded ? null : item.id) : startEdit(item)}
+            title={item.body ? "Click to expand" : "Click to edit"}
           >
             {item.title}
           </button>
@@ -537,14 +537,13 @@ export function SpacesView({ messages, send }: SpacesViewProps) {
             </span>
           )}
 
-          {item.body && (
-            <button
-              style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "0 4px" }}
-              onClick={() => setExpandedItem(isExpanded ? null : item.id)}
-            >
-              {isExpanded ? "\u25B4" : "\u25BE"}
-            </button>
-          )}
+          <button
+            style={{ background: "none", border: "none", color: theme.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "0 4px" }}
+            onClick={() => startEdit(item)}
+            title="Edit"
+          >
+            &#9998;
+          </button>
 
           <button style={{ background: "none", border: "none", color: theme.textFaint, fontSize: 8, cursor: "pointer", fontFamily: "inherit", padding: "0 2px", flexShrink: 0, lineHeight: 1 }} onClick={() => reorderItem(item.id, "up")} title="Move up">&#9650;</button>
           <button style={{ background: "none", border: "none", color: theme.textFaint, fontSize: 8, cursor: "pointer", fontFamily: "inherit", padding: "0 2px", flexShrink: 0, lineHeight: 1 }} onClick={() => reorderItem(item.id, "down")} title="Move down">&#9660;</button>

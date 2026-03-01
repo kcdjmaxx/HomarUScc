@@ -29,6 +29,12 @@ browser-data/
 
 # Local user data (CRM, dreams, research, outreach, user context, etc.)
 local/
+dreams/
+user/
+
+# Plugins (per-user, not committed to repo)
+src/plugins/
+dashboard/src/plugins/
 
 # Images (generated avatars, etc.)
 *.PNG

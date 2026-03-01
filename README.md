@@ -26,6 +26,7 @@ Claude Code <-> MCP (stdio) <-> Proxy (mcp-proxy.ts)
                                     +-- Identity manager (soul.md / user.md / state.md + journal)
                                     +-- Session checkpoint (compaction resilience)
                                     +-- Agent registry (background task dispatch)
+                                    +-- Plugin loader (backend plugins from dist/plugins/)
                                     +-- Skill plugins (hot-loadable)
                                     +-- Tool registry (bash, fs, git, web, memory)
 ```
@@ -198,16 +199,38 @@ When enabled, the dashboard runs on `http://localhost:3120` with:
 
 The dashboard is responsive — on mobile devices the sidebar collapses into a hamburger menu. Accessible remotely over Tailscale at `http://<your-tailscale-ip>:3120`.
 
-### Apps Platform (planned)
+### Plugin System
 
-The dashboard supports a pluggable apps system. The agent can build mini web apps on request (budget trackers, reading lists, dashboards) that live inside the dashboard UI:
+HomarUScc supports two kinds of extensibility:
 
-- Apps live at `~/.homaruscc/apps/{slug}/` with a manifest, React component, and JSON data store
-- Each app declares hooks (`read`, `write`, `describe`) exposed via a single `app_invoke` MCP tool
-- The agent can query and update app state through hooks — "what's on my reading list?" triggers `app_invoke(slug=reading-list, hook=describe)`
-- Apps are created by the agent via filesystem tools and auto-discovered on manifest scan
+**Simple apps** — lightweight data apps with JSON storage and optional HTML UI. Live at `~/.homaruscc/apps/{slug}/` with a `manifest.json`, optional `index.html`, and `data.json`. Hooks (`read`, `write`, `describe`) are exposed via the `app_invoke` MCP tool.
 
-See `specs/apps-platform.md` and `design/crc-App*.md` for the full design.
+**Backend plugins** — full-featured plugins with their own database, Express routes, and MCP tools. Plugin source lives in `src/plugins/<slug>/` (gitignored, per-user) and compiles with the project to `dist/plugins/<slug>/`. At startup, the plugin loader discovers compiled plugins, initializes them with a data directory, and mounts their routes and tools.
+
+```
+~/.homaruscc/apps/<slug>/
+├── manifest.json       # { "type": "plugin", "name": "...", ... }
+├── collection.sqlite   # Plugin's own database (example)
+└── ...                 # Plugin data files
+
+src/plugins/<slug>/     # Source (gitignored, compiles to dist/plugins/)
+├── index.ts            # Exports: init(), routes(), tools(), shutdown()
+├── store.ts            # Plugin's data layer
+└── ...
+
+dashboard/src/plugins/  # Frontend components (gitignored)
+└── <slug>.tsx          # Auto-discovered via import.meta.glob
+```
+
+Plugin backend interface:
+```typescript
+export function init(dataDir: string): void;          // Called at startup
+export function routes?(router: Router): void;        // Express routes mounted at /api/plugins/<slug>/
+export function tools?(): PluginToolDef[];             // MCP tools registered alongside core tools
+export function shutdown?(): void;                     // Cleanup on stop
+```
+
+Plugins are personal — they don't ship with the repo. When someone clones HomarUScc, they get a clean core. The agent builds plugins on request and they live entirely in user-space.
 
 ### Dashboard Development
 
@@ -231,6 +254,7 @@ HomarUScc creates runtime data that's gitignored and stays local. All user data 
 | `local/dreams/` | Dream cycle output (nightly, stored at 0.5x weight) |
 | `local/research/` | Research notes stored by memory system |
 | `local/docs/` | Private documents (outreach drafts, session notes, etc.) |
+| `~/.homaruscc/apps/` | App and plugin data directories (per-user) |
 | `~/.homaruscc/memory/` | Vector + FTS search index (SQLite) |
 | `~/.homaruscc/identity/` | Agent identity files (soul, user, state, preferences, disagreements) |
 | `~/.homaruscc/journal/` | Daily reflection journal entries (indexed by memory system) |
@@ -356,6 +380,7 @@ Key source files:
 | `src/identity-manager.ts` | Identity loader (soul.md, user.md, state.md) |
 | `src/timer-service.ts` | Cron, interval, and one-shot timers |
 | `src/browser-service.ts` | Playwright browser automation |
+| `src/plugin-loader.ts` | Backend plugin discovery, loading, and mounting |
 | `src/skill-manager.ts` | Hot-loadable skill plugins |
 | `src/tool-registry.ts` | Tool registration and policy enforcement |
 | `src/tools/` | Built-in tools (bash, fs, git, web, memory) |

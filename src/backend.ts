@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     const projectDir = resolve(import.meta.dirname ?? __dirname, "..");
     const commandHandler = new TelegramCommandHandler(logger, {
       getStatus: () => loop.getStatus(),
+      getCompactionStats: () => dashboardServer!.getCompactionStats(),
       getLastWaitPoll: () => dashboardServer!.getLastWaitPoll(),
       projectDir,
       sendTelegram: async (chatId, text) => {

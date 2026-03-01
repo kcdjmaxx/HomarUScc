@@ -129,6 +129,18 @@ All dashboard components use `useTheme()` hook to access the current color palet
 - [x] test-AppRegistry.md → `src/__tests__/app-registry.test.ts`
 - [x] test-AppDataStore.md → `src/__tests__/app-data-store.test.ts`
 
+### Plugin System
+- [x] crc-PluginLoader.md → `src/plugin-loader.ts`
+  - Discovers compiled plugins from `dist/plugins/*/index.js`
+  - Reads manifests from `~/.homaruscc/apps/<slug>/manifest.json`
+  - Dynamically imports and initializes plugins at startup
+  - Mounts Express routes at `/api/plugins/<slug>/`
+  - Merges plugin MCP tools into core tool list
+  - Frontend plugins auto-discovered via `import.meta.glob` in `dashboard/src/App.tsx`
+
+### Record Collection (plugin, not in repo)
+Extracted to `src/plugins/record-collection/` (gitignored). Design artifacts at `~/.homaruscc/apps/record-collection/design/`.
+
 ## Gaps
 
 - [x] O1: No unit tests implemented yet (test designs exist but no test files in src/)

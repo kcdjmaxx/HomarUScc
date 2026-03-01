@@ -13,6 +13,7 @@ export interface TimerConfig {
   schedule: string;
   prompt: string;
   timezone?: string;
+  lastFired?: number;
 }
 
 interface TimerEntry {
@@ -145,17 +146,22 @@ export class TimerService {
     const entry = this.timers.get(timerId);
     if (!entry || !this.emitFn) return;
 
+    const now = Date.now();
     const event: Event = {
       id: uuid(),
       type: "timer_fired",
       source: `timer:${timerId}`,
-      timestamp: Date.now(),
+      timestamp: now,
       payload: {
         timerId,
         name: entry.config.name,
         prompt: entry.config.prompt,
       },
     };
+
+    // Track last fire time for missed-timer replay
+    entry.config.lastFired = now;
+    this.saveTimers();
 
     this.logger.info("Timer fired", { id: timerId, name: entry.config.name });
     this.emitFn(event);
@@ -164,6 +170,37 @@ export class TimerService {
       this.timers.delete(timerId);
       this.saveTimers();
     }
+  }
+
+  /**
+   * Returns synthetic timer_fired events for timers that fired after `since`
+   * but whose events may have fallen out of the capped eventHistory.
+   * Excludes timers whose IDs are in `knownEventSources` (already in history).
+   */
+  getUndeliveredFires(since: number, knownEventSources: Set<string>): Event[] {
+    const missed: Event[] = [];
+    for (const [id, entry] of this.timers) {
+      const { config } = entry;
+      if (!config.lastFired || config.lastFired <= since) continue;
+      // Skip if this timer's event is already in the event history
+      if (knownEventSources.has(`timer:${id}`)) continue;
+      // Skip high-frequency timers (interval/vault-reindex) — not worth replaying
+      if (config.type === "interval") continue;
+
+      missed.push({
+        id: uuid(),
+        type: "timer_fired",
+        source: `timer:${id}`,
+        timestamp: config.lastFired,
+        payload: {
+          timerId: id,
+          name: config.name,
+          prompt: config.prompt,
+          replayed: true,
+        },
+      });
+    }
+    return missed.sort((a, b) => a.timestamp - b.timestamp);
   }
 
   private startTimer(id: string): void {

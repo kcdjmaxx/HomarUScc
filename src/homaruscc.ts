@@ -17,6 +17,8 @@ import { registerBuiltinTools } from "./tools/index.js";
 import { TranscriptLogger } from "./transcript-logger.js";
 import { SessionCheckpoint } from "./session-checkpoint.js";
 import { AgentRegistry } from "./agent-registry.js";
+// VaultIndex and UnifiedSearch live in local/vault-indexer/ (gitignored)
+// Loaded dynamically at runtime if vault config is present
 
 export type LoopState = "starting" | "running" | "stopping" | "stopped";
 
@@ -40,6 +42,10 @@ export class HomarUScc {
   private transcriptLogger?: TranscriptLogger;
   private sessionCheckpoint!: SessionCheckpoint;
   private agentRegistry!: AgentRegistry;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private vaultIndex?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private unifiedSearch?: any;
   private logger: Logger;
   private processInterval: ReturnType<typeof setInterval> | null = null;
   private eventHistory: Event[] = [];
@@ -113,6 +119,16 @@ export class HomarUScc {
     return this.agentRegistry;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getVaultIndex(): any | undefined {
+    return this.vaultIndex;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getUnifiedSearch(): any | undefined {
+    return this.unifiedSearch;
+  }
+
   // Set the MCP notification callback
   setNotifyFn(fn: (event: Event) => void): void {
     this.notifyFn = fn;
@@ -172,7 +188,17 @@ export class HomarUScc {
   }
 
   private getEventsSince(since: number): Event[] {
-    return this.eventHistory.filter(e => e.timestamp > since);
+    const fromHistory = this.eventHistory.filter(e => e.timestamp > since);
+    // Replay missed timer events that fell out of the capped history
+    if (this.timerService) {
+      const knownSources = new Set(fromHistory.filter(e => e.type === "timer_fired").map(e => e.source));
+      const missed = this.timerService.getUndeliveredFires(since, knownSources);
+      if (missed.length > 0) {
+        this.logger.info("Replaying missed timer events", { count: missed.length, names: missed.map(e => (e.payload as Record<string, unknown>)?.name) });
+        return [...fromHistory, ...missed].sort((a, b) => a.timestamp - b.timestamp);
+      }
+    }
+    return fromHistory;
   }
 
   registerHandler(eventType: string, handler: (event: Event) => void | Promise<void>): void {
@@ -224,6 +250,47 @@ export class HomarUScc {
         }
       } catch (err) {
         this.logger.warn("Memory initialization failed", { error: String(err) });
+      }
+    }
+
+    // 3a. Vault index (optional — V34: only if memory.vault config section present)
+    // VaultIndex/UnifiedSearch are in local/vault-indexer/ (gitignored), loaded dynamically
+    const vaultConfig = memoryConfig?.vault;
+    if (vaultConfig?.vaultPath) {
+      try {
+        const vaultDistPath = new URL("../local/vault-indexer/dist/", import.meta.url).pathname;
+        const { VaultIndex } = await import(`${vaultDistPath}vault-index.js`);
+        const { UnifiedSearch } = await import(`${vaultDistPath}unified-search.js`);
+
+        const vaultDbPath = (vaultConfig.dbPath ?? `${home}/.homaruscc/vault/index.sqlite`)
+          .replace(/^~/, home);
+        this.vaultIndex = new VaultIndex(this.logger, {
+          vaultPath: vaultConfig.vaultPath,
+          exclusions: vaultConfig.exclusions,
+        });
+        if (memoryConfig?.embedding) {
+          const vaultEmbeddingProvider = createEmbeddingProvider({
+            provider: memoryConfig.embedding.provider,
+            model: memoryConfig.embedding.model,
+            baseUrl: memoryConfig.embedding.baseUrl,
+            apiKey: memoryConfig.embedding.apiKey,
+            dimensions: memoryConfig.embedding.dimensions,
+          }, this.logger);
+          this.vaultIndex.setEmbeddingProvider(vaultEmbeddingProvider);
+        }
+        await this.vaultIndex.initialize(vaultDbPath);
+
+        // Create UnifiedSearch coordinator
+        this.unifiedSearch = new UnifiedSearch(
+          this.vaultIndex,
+          this.memoryIndex,
+          vaultConfig.unifiedWeights,
+          this.logger,
+        );
+
+        this.logger.info("Vault index enabled", { vaultPath: vaultConfig.vaultPath });
+      } catch (err) {
+        this.logger.warn("Vault index not available or initialization failed", { error: String(err) });
       }
     }
 
@@ -285,6 +352,30 @@ export class HomarUScc {
       this.timerService.start();
     }
 
+    // 8b. V37, V38, V39: Auto-reindex timer for vault
+    if (this.vaultIndex && vaultConfig?.autoReindex) {
+      const intervalMs = vaultConfig.reindexIntervalMs ?? 3600000;
+      this.timerService.add({
+        name: "vault-reindex",
+        type: "interval",
+        schedule: String(intervalMs),
+        prompt: "Vault incremental reindex timer fired. The vault index will be updated automatically.",
+      });
+      // Register handler to perform incremental reindex when the timer fires
+      this.registerHandler("timer_fired", async (event) => {
+        const payload = event.payload as { name?: string };
+        if (payload?.name === "vault-reindex" && this.vaultIndex) {
+          try {
+            const stats = await this.vaultIndex.incrementalReindex();
+            this.logger.info("Auto vault reindex completed", { ...stats });
+          } catch (err) {
+            this.logger.warn("Auto vault reindex failed", { error: String(err) });
+          }
+        }
+      });
+      this.logger.info("Vault auto-reindex timer registered", { intervalMs });
+    }
+
     // 9. Channels
     this.channelManager.setEventHandler((e) => this.emit(e));
     this.channelManager.loadAdapters(configData.channels);
@@ -324,6 +415,7 @@ export class HomarUScc {
     this.skillManager.stopWatching();
     await this.transcriptLogger?.stop();
     this.memoryIndex.stopWatching();
+    this.vaultIndex?.close();
 
     const remaining = this.eventQueue.clear();
     if (remaining.length > 0) {
@@ -392,6 +484,7 @@ export class HomarUScc {
         state: s.getState(),
       })) ?? [],
       memory: this.memoryIndex.getStats(),
+      vault: this.vaultIndex?.getStats() ?? null,
       timers: this.timerService?.getAll().length ?? 0,
       eventHistory: this.eventHistory.length,
     };

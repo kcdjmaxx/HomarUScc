@@ -16,6 +16,7 @@ import { CompactionManager } from "./compaction-manager.js";
 import { SpacesManager } from "./spaces-manager.js";
 import { AppRegistry } from "./app-registry.js";
 import { AppDataStore } from "./app-data-store.js";
+import { PluginLoader } from "./plugin-loader.js";
 
 interface WsMessage {
   type: "chat" | "search" | "status" | "events";
@@ -42,6 +43,7 @@ export class DashboardServer {
   private spacesManager: SpacesManager;
   private appRegistry: AppRegistry;
   private appDataStore: AppDataStore;
+  private pluginLoader: PluginLoader;
   private lastWaitPoll = 0;
   private restartChatId: string | null = null;
 
@@ -69,6 +71,9 @@ export class DashboardServer {
     this.appRegistry.scan();
     this.appDataStore = new AppDataStore(appsDir, this.appRegistry);
 
+    // Plugin loader — discovers plugins from dist/plugins/
+    this.pluginLoader = new PluginLoader(projectDir, appsDir, logger);
+
     this.app = express();
     this.httpServer = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.httpServer });
@@ -79,6 +84,21 @@ export class DashboardServer {
   }
 
   async start(): Promise<void> {
+    // Load plugins (dynamic import requires await)
+    await this.pluginLoader.loadAll();
+    this.pluginLoader.mountRoutes(this.app);
+    // Merge plugin tools into MCP tools
+    this.mcpTools.push(...this.pluginLoader.getAllTools());
+
+    // Serve built dashboard AFTER plugin routes (catch-all must be last)
+    const distPath = resolve(import.meta.dirname ?? __dirname, "../dashboard/dist");
+    if (existsSync(distPath)) {
+      this.app.use(express.static(distPath));
+      this.app.get("*", (_req, res) => {
+        res.sendFile(join(distPath, "index.html"));
+      });
+    }
+
     try {
       await this.listen();
     } catch (err: unknown) {
@@ -128,6 +148,7 @@ export class DashboardServer {
 
   async stop(): Promise<void> {
     this.spacesManager.stop();
+    this.pluginLoader.shutdown();
     for (const client of this.clients) {
       client.close();
     }
@@ -149,6 +170,10 @@ export class DashboardServer {
   // R222: Track last /api/wait call for Claude liveness detection
   getLastWaitPoll(): number {
     return this.lastWaitPoll;
+  }
+
+  getCompactionStats() {
+    return this.compactionManager.getCompactionStats();
   }
 
   // Broadcast event to all connected dashboard clients
@@ -195,6 +220,39 @@ export class DashboardServer {
 
     this.app.get("/api/memory/stats", (_req, res) => {
       res.json(this.loop.getMemoryIndex().getStats());
+    });
+
+    // V32, V33: Unified search endpoint — merges vault + memory results
+    this.app.get("/api/search/unified", async (req, res) => {
+      const q = req.query.q as string;
+      if (!q) {
+        res.status(400).json({ error: "Missing required query parameter: q" });
+        return;
+      }
+      const limit = parseInt(req.query.limit as string) || 10;
+      const unifiedSearch = this.loop.getUnifiedSearch();
+      if (!unifiedSearch) {
+        // Fall back to memory-only search if vault not configured
+        const results = await this.loop.getMemoryIndex().search(q, { limit });
+        res.json(results.map((r) => ({ ...r, source: "memory" })));
+        return;
+      }
+      try {
+        const results = await unifiedSearch.search(q, { limit });
+        res.json(results);
+      } catch (err) {
+        res.status(500).json({ error: `Search failed: ${String(err)}` });
+      }
+    });
+
+    // Vault stats endpoint
+    this.app.get("/api/vault/stats", (_req, res) => {
+      const vaultIndex = this.loop.getVaultIndex();
+      if (!vaultIndex) {
+        res.json({ enabled: false });
+        return;
+      }
+      res.json({ enabled: true, ...vaultIndex.getStats() });
     });
 
     this.app.get("/api/identity/soul", (_req, res) => {
@@ -748,6 +806,8 @@ export class DashboardServer {
       res.json(this.spacesManager.search(q));
     });
 
+    // Record collection and other plugin routes are mounted by pluginLoader in start()
+
     // --- Document viewer endpoint ---
     // Serves markdown files from allowed base directories
     const projectDir = resolve(import.meta.dirname ?? __dirname, "..");
@@ -782,14 +842,7 @@ export class DashboardServer {
       res.type("text/markdown").send(readFileSync(resolved, "utf8"));
     });
 
-    // Serve built dashboard in production
-    const distPath = resolve(import.meta.dirname ?? __dirname, "../dashboard/dist");
-    if (existsSync(distPath)) {
-      this.app.use(express.static(distPath));
-      this.app.get("*", (_req, res) => {
-        res.sendFile(join(distPath, "index.html"));
-      });
-    }
+    // Note: static file serving + catch-all route is set up in start() after plugin routes
   }
 
   private setupWebSocket(): void {

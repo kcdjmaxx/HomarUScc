@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import type { Logger } from "./types.js";
 import type { HomarUScc } from "./homaruscc.js";
 
-interface CompactionRecord {
+export interface CompactionRecord {
   timestamp: number;
   loopRestarted: boolean; // Did /api/wait get called after this compaction?
 }

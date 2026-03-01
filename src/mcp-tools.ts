@@ -3,6 +3,8 @@
 import type { HomarUScc } from "./homaruscc.js";
 import type { TelegramChannelAdapter } from "./telegram-adapter.js";
 import type { DashboardAdapter } from "./dashboard-adapter.js";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 export interface McpToolDef {
   name: string;
@@ -671,6 +673,258 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       }
     },
   });
+
+  // --- vault_search (V29) ---
+  tools.push({
+    name: "vault_search",
+    description: "Search the Obsidian vault index using hybrid vector + FTS search. Returns results with vault-relative paths.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+    async handler(params) {
+      const vaultIndex = loop.getVaultIndex();
+      if (!vaultIndex) {
+        return { content: [{ type: "text", text: "Vault index not configured. Add memory.vault section to config." }] };
+      }
+      const { query, limit = 10 } = params as { query: string; limit?: number };
+      try {
+        const results = await vaultIndex.search(query, { limit });
+        if (results.length === 0) {
+          return { content: [{ type: "text", text: "No vault results found" }] };
+        }
+        const formatted = results.map((r: { path: string; score: number; content: string }, i: number) =>
+          `[${i + 1}] ${r.path} (score: ${r.score.toFixed(3)})\n${r.content.slice(0, 500)}`
+        ).join("\n\n---\n\n");
+        return { content: [{ type: "text", text: formatted }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- vault_reindex (V30, V31) ---
+  tools.push({
+    name: "vault_reindex",
+    description: "Trigger a vault reindex. Default is incremental (only changed files). Use mode='full' to rebuild from scratch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["full", "incremental"], description: "Reindex mode (default: incremental)" },
+      },
+    },
+    async handler(params) {
+      const vaultIndex = loop.getVaultIndex();
+      if (!vaultIndex) {
+        return { content: [{ type: "text", text: "Vault index not configured. Add memory.vault section to config." }] };
+      }
+      const { mode = "incremental" } = params as { mode?: string };
+      try {
+        const stats = mode === "full"
+          ? await vaultIndex.fullReindex()
+          : await vaultIndex.incrementalReindex();
+        return {
+          content: [{
+            type: "text",
+            text: `Vault ${mode} reindex complete:\n- Files processed: ${stats.filesProcessed}\n- Chunks created: ${stats.chunksCreated}\n- Duration: ${stats.durationMs}ms${stats.errors ? `\n- Errors: ${stats.errors}` : ""}`,
+          }],
+        };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- Home Assistant tools ---
+
+  const haConfig = loop.getConfig().getAll().homeAssistant;
+
+  const haFetch = async (path: string, options?: RequestInit) => {
+    if (!haConfig) throw new Error("Home Assistant not configured");
+    const { readFileSync } = await import("fs");
+    const token = readFileSync(haConfig.tokenPath, "utf-8").trim();
+    const resp = await fetch(`${haConfig.url}${path}`, {
+      ...options,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options?.headers },
+    });
+    if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
+    return resp.json();
+  };
+
+  tools.push({
+    name: "ha_states",
+    description: "List Home Assistant entities. Optionally filter by domain (e.g. 'light', 'switch', 'climate').",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Entity domain filter (e.g. 'light', 'switch'). Omit for all." },
+      },
+    },
+    async handler(params) {
+      try {
+        const { domain } = params as { domain?: string };
+        const states = await haFetch("/api/states") as Array<{ entity_id: string; state: string; attributes: { friendly_name?: string } }>;
+        const filtered = domain ? states.filter(s => s.entity_id.startsWith(domain + ".")) : states;
+        const lines = filtered.map(s =>
+          `${s.entity_id.padEnd(35)} ${s.state.padEnd(15)} ${s.attributes.friendly_name || ""}`
+        );
+        return { content: [{ type: "text", text: lines.join("\n") || "No entities found" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "ha_light_on",
+    description: "Turn on a Home Assistant light. Supports brightness (0-255), color via rgb_color [r,g,b], or color_name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entity_id: { type: "string", description: "Light entity ID (e.g. 'light.bedroom') or area name (matched to entities)" },
+        brightness: { type: "number", description: "Brightness 0-255" },
+        rgb_color: { type: "array", items: { type: "number" }, description: "RGB color as [r, g, b]" },
+        color_name: { type: "string", description: "Color name (e.g. 'purple', 'red', 'blue')" },
+      },
+      required: ["entity_id"],
+    },
+    async handler(params) {
+      try {
+        const { entity_id, brightness, rgb_color, color_name } = params as {
+          entity_id: string; brightness?: number; rgb_color?: number[]; color_name?: string;
+        };
+        const serviceData: Record<string, unknown> = { entity_id };
+        if (brightness !== undefined) serviceData.brightness = brightness;
+        if (rgb_color) serviceData.rgb_color = rgb_color;
+        if (color_name) serviceData.color_name = color_name;
+        await haFetch("/api/services/light/turn_on", { method: "POST", body: JSON.stringify(serviceData) });
+        const extras = [brightness && `brightness=${brightness}`, color_name, rgb_color && `rgb=${rgb_color}`].filter(Boolean).join(", ");
+        return { content: [{ type: "text", text: `${entity_id}: on${extras ? ` (${extras})` : ""}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "ha_light_off",
+    description: "Turn off a Home Assistant light.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entity_id: { type: "string", description: "Light entity ID (e.g. 'light.bedroom')" },
+      },
+      required: ["entity_id"],
+    },
+    async handler(params) {
+      try {
+        const { entity_id } = params as { entity_id: string };
+        await haFetch("/api/services/light/turn_off", { method: "POST", body: JSON.stringify({ entity_id }) });
+        return { content: [{ type: "text", text: `${entity_id}: off` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "ha_service",
+    description: "Call any Home Assistant service (e.g. switch/turn_on, climate/set_temperature).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Service domain (e.g. 'switch', 'climate', 'scene')" },
+        service: { type: "string", description: "Service name (e.g. 'turn_on', 'set_temperature')" },
+        data: { type: "object", description: "Service data payload (must include entity_id)" },
+      },
+      required: ["domain", "service", "data"],
+    },
+    async handler(params) {
+      try {
+        const { domain, service, data } = params as { domain: string; service: string; data: Record<string, unknown> };
+        await haFetch(`/api/services/${domain}/${service}`, { method: "POST", body: JSON.stringify(data) });
+        return { content: [{ type: "text", text: `Called ${domain}/${service}: ${JSON.stringify(data)}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- Zoho API with auto-refresh ---
+
+  const zohoRefresh = async (tokenFile: string): Promise<string> => {
+    const { readFileSync, writeFileSync } = await import("fs");
+    const tokens = JSON.parse(readFileSync(tokenFile, "utf-8"));
+    const now = Date.now() / 1000;
+    // Refresh if token is expired or will expire within 5 minutes
+    if (tokens.access_token && tokens.created_at && (now - tokens.created_at) < (tokens.expires_in - 300)) {
+      return tokens.access_token;
+    }
+    // Refresh the token
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: tokens.client_id,
+      client_secret: tokens.client_secret,
+      refresh_token: tokens.refresh_token,
+    });
+    const resp = await fetch(`https://accounts.zoho.com/oauth/v2/token?${params}`, { method: "POST" });
+    if (!resp.ok) throw new Error(`Zoho refresh failed ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json() as { access_token: string; expires_in: number; token_type: string; error?: string };
+    if (data.error) throw new Error(`Zoho refresh error: ${data.error}`);
+    tokens.access_token = data.access_token;
+    tokens.expires_in = data.expires_in;
+    tokens.created_at = Date.now() / 1000;
+    writeFileSync(tokenFile, JSON.stringify(tokens, null, 2));
+    return data.access_token;
+  };
+
+  tools.push({
+    name: "zoho_fetch",
+    description: "Make an authenticated Zoho API call with automatic token refresh. Supports Mail, Calendar, and other Zoho APIs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Full Zoho API URL (e.g. https://mail.zoho.com/api/accounts/...)" },
+        method: { type: "string", description: "HTTP method (default GET)" },
+        body: { type: "string", description: "Request body (JSON string)" },
+        tokenFile: { type: "string", description: "Token file: 'hal' for zoho-mail-tokens.json (default), 'caul' for zoho-caul-tokens.json" },
+        contentType: { type: "string", description: "Content-Type header (default application/json)" },
+      },
+      required: ["url"],
+    },
+    async handler(params) {
+      try {
+        const { url, method = "GET", body, tokenFile = "hal", contentType = "application/json" } = params as {
+          url: string; method?: string; body?: string; tokenFile?: string; contentType?: string;
+        };
+        const homedir = (await import("os")).homedir();
+        const file = tokenFile === "caul"
+          ? `${homedir}/.homaruscc/secrets/zoho-caul-tokens.json`
+          : `${homedir}/.homaruscc/secrets/zoho-mail-tokens.json`;
+        const accessToken = await zohoRefresh(file);
+        const fetchOpts: RequestInit = {
+          method,
+          headers: {
+            Authorization: `Zoho-oauthtoken ${accessToken}`,
+            "Content-Type": contentType,
+          },
+        };
+        if (body) fetchOpts.body = body;
+        const resp = await fetch(url, fetchOpts);
+        const text = await resp.text();
+        if (!resp.ok) return { content: [{ type: "text", text: `Zoho API ${resp.status}: ${text}` }] };
+        return { content: [{ type: "text", text }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // Record collection and other plugin tools are merged by DashboardServer.start()
 
   // --- run_tool ---
   tools.push({
