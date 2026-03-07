@@ -33,6 +33,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       try {
         await loop.getChannelManager().send("telegram", chatId, { text });
         loop.getTranscriptLogger()?.logOutbound("telegram", text);
+        loop.getFactExtractor()?.addTurn({ timestamp: Date.now(), direction: "out", text });
         return { content: [{ type: "text", text: `Sent to Telegram chat ${chatId}` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
@@ -251,6 +252,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       try {
         await loop.getChannelManager().send("dashboard", "chat", { text });
         loop.getTranscriptLogger()?.logOutbound("dashboard", text);
+        loop.getFactExtractor()?.addTurn({ timestamp: Date.now(), direction: "out", text });
         return { content: [{ type: "text", text: "Sent to dashboard" }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
@@ -854,6 +856,164 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- CRM Search (fuzzy matching across contact files) ---
+  {
+    const crmDir = join(import.meta.dirname ?? __dirname, "..", "local", "crm");
+
+    interface CrmContact {
+      slug: string;
+      name: string;
+      aliases: string[];
+      email?: string;
+      phone?: string;
+      tags: string[];
+      connections: Array<{ name: string; relationship: string }>;
+      context: string;
+      notes: string;
+    }
+
+    const parseCrmFileForSearch = (slug: string, content: string): CrmContact => {
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+      if (!fmMatch) return { slug, name: slug, aliases: [], tags: [], connections: [], context: "", notes: content };
+      const fm: Record<string, unknown> = {};
+      for (const line of fmMatch[1].split("\n")) {
+        const colonIdx = line.indexOf(":");
+        if (colonIdx === -1) continue;
+        const key = line.slice(0, colonIdx).trim();
+        let val = line.slice(colonIdx + 1).trim();
+        if (val.startsWith("[") && val.endsWith("]")) {
+          try { fm[key] = JSON.parse(val); } catch { fm[key] = val; }
+        } else if (val.startsWith('"') && val.endsWith('"')) {
+          fm[key] = val.slice(1, -1);
+        } else {
+          fm[key] = val;
+        }
+      }
+      const connections: Array<{ name: string; relationship: string }> = [];
+      if (Array.isArray(fm.connections)) {
+        for (const c of fm.connections) {
+          if (typeof c === "object" && c !== null) connections.push(c as { name: string; relationship: string });
+        }
+      }
+      return {
+        slug,
+        name: (fm.name as string) ?? slug,
+        aliases: Array.isArray(fm.aliases) ? fm.aliases as string[] : [],
+        email: fm.email as string | undefined,
+        phone: fm.phone as string | undefined,
+        tags: Array.isArray(fm.tags) ? fm.tags as string[] : [],
+        connections,
+        context: (fm.context as string) ?? "",
+        notes: fmMatch[2].trim(),
+      };
+    };
+
+    const levenshtein = (a: string, b: string): number => {
+      const m = a.length, n = b.length;
+      if (m === 0) return n;
+      if (n === 0) return m;
+      const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          dp[i][j] = a[i - 1] === b[j - 1]
+            ? dp[i - 1][j - 1]
+            : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+      }
+      return dp[m][n];
+    };
+
+    const fuzzyMatchScore = (query: string, contact: CrmContact): number => {
+      const q = query.toLowerCase();
+      const targets = [
+        contact.name.toLowerCase(),
+        ...contact.aliases.map(a => a.toLowerCase()),
+        ...contact.tags.map(t => t.toLowerCase()),
+        contact.context.toLowerCase(),
+      ];
+
+      // Exact substring match = highest score
+      for (const t of targets) {
+        if (!t || !q) continue;  // skip empty strings
+        if (t.includes(q) || q.includes(t)) return 1.0;
+      }
+
+      // Word-level Levenshtein matching (handles STT name mangling)
+      const queryWords = q.split(/\s+/);
+      const nameWords = contact.name.toLowerCase().split(/\s+/);
+      const aliasWords = contact.aliases.flatMap(a => a.toLowerCase().split(/\s+/));
+      const allNameWords = [...nameWords, ...aliasWords];
+
+      for (const qw of queryWords) {
+        for (const nw of allNameWords) {
+          if (levenshtein(qw, nw) <= 2) return 0.8;
+        }
+      }
+
+      // Partial word match in notes
+      if (contact.notes.toLowerCase().includes(q)) return 0.4;
+
+      return 0;
+    };
+
+    tools.push({
+      name: "crm_search",
+      description: "Search CRM contacts by name, alias, tag, or keyword. Supports fuzzy matching for speech-to-text name mangling. Returns contact details.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name, alias, tag, or keyword to search for" },
+        },
+        required: ["query"],
+      },
+      async handler(params) {
+        try {
+          const { query } = params as { query: string };
+          const { existsSync, readdirSync, readFileSync } = await import("fs");
+          if (!existsSync(crmDir)) {
+            return { content: [{ type: "text", text: "CRM directory not found" }] };
+          }
+          const files = readdirSync(crmDir).filter(f => f.endsWith(".md"));
+          const scored: Array<{ contact: CrmContact; score: number }> = [];
+          for (const file of files) {
+            try {
+              const content = readFileSync(join(crmDir, file), "utf8");
+              const contact = parseCrmFileForSearch(file.replace(/\.md$/, ""), content);
+              const score = fuzzyMatchScore(query, contact);
+              if (score > 0) scored.push({ contact, score });
+            } catch { /* skip */ }
+          }
+          scored.sort((a, b) => b.score - a.score);
+          const results = scored.slice(0, 5);
+          if (results.length === 0) {
+            return { content: [{ type: "text", text: `No CRM contacts found matching "${query}"` }] };
+          }
+          const formatted = results.map(({ contact: c, score }) => {
+            const lines = [`**${c.name}** (match: ${(score * 100).toFixed(0)}%)`];
+            if (c.phone) lines.push(`Phone: ${c.phone}`);
+            if (c.email) lines.push(`Email: ${c.email}`);
+            if (c.tags.length) lines.push(`Tags: ${c.tags.join(", ")}`);
+            if (c.context) lines.push(`Context: ${c.context}`);
+            if (c.connections.length) {
+              lines.push(`Connections: ${c.connections.map(cn => `${cn.name} (${cn.relationship})`).join(", ")}`);
+            }
+            if (c.aliases.length) lines.push(`Aliases: ${c.aliases.join(", ")}`);
+            if (c.notes) lines.push(`Notes: ${c.notes.slice(0, 300)}`);
+            return lines.join("\n");
+          }).join("\n\n---\n\n");
+          return { content: [{ type: "text", text: formatted }] };
+        } catch (err) {
+          return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+        }
+      },
+    });
+  }
+
+  // --- Calendar Today (Zoho Calendar wrapper) ---
+  // Defined before zoho_fetch since it uses the same token refresh infrastructure
+
   // --- Zoho API with auto-refresh ---
 
   const zohoRefresh = async (tokenFile: string): Promise<string> => {
@@ -924,6 +1084,79 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- calendar_today (wraps Zoho Calendar API) ---
+  tools.push({
+    name: "calendar_today",
+    description: "Get today's calendar events. Optionally pass a date string (YYYY-MM-DD) to check a different day.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date to check (YYYY-MM-DD). Defaults to today." },
+      },
+    },
+    async handler(params) {
+      try {
+        const { date } = params as { date?: string };
+        const targetDate = date || new Date().toISOString().slice(0, 10);
+        const calendarUid = "8039ad13d9c54a35b9687fef031585bf";
+        const home = homedir();
+        const tokenFilePath = `${home}/.homaruscc/secrets/zoho-mail-tokens.json`;
+        const accessToken = await zohoRefresh(tokenFilePath);
+
+        // Zoho Calendar API: range query for the target date
+        // Format: yyyyMMdd'T'HHmmssZ
+        const startRange = `${targetDate.replace(/-/g, "")}T000000Z`;
+        const endRange = `${targetDate.replace(/-/g, "")}T235959Z`;
+
+        const url = `https://calendar.zoho.com/api/v1/calendars/${calendarUid}/events?range=${JSON.stringify({ start: startRange, end: endRange })}`;
+        const resp = await fetch(url, {
+          headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+        });
+
+        if (!resp.ok) {
+          // Fallback: try listing events without range filter
+          const fallbackUrl = `https://calendar.zoho.com/api/v1/calendars/${calendarUid}/events`;
+          const fallbackResp = await fetch(fallbackUrl, {
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+          });
+          if (!fallbackResp.ok) {
+            return { content: [{ type: "text", text: `Zoho Calendar API ${fallbackResp.status}: ${await fallbackResp.text()}` }] };
+          }
+          const allData = await fallbackResp.json() as { events?: Array<{ title: string; dateandtime?: { start: string; end: string }; location?: string }> };
+          const events = (allData.events || []).filter((e: { dateandtime?: { start: string } }) => {
+            if (!e.dateandtime?.start) return false;
+            return e.dateandtime.start.includes(targetDate.replace(/-/g, ""));
+          });
+          if (events.length === 0) {
+            return { content: [{ type: "text", text: `No events found for ${targetDate}` }] };
+          }
+          const formatted = events.map((e: { title: string; dateandtime?: { start: string; end: string }; location?: string }) => {
+            const parts = [e.title];
+            if (e.dateandtime) parts.push(`${e.dateandtime.start} - ${e.dateandtime.end}`);
+            if (e.location) parts.push(`Location: ${e.location}`);
+            return parts.join(" | ");
+          }).join("\n");
+          return { content: [{ type: "text", text: `Events for ${targetDate}:\n${formatted}` }] };
+        }
+
+        const data = await resp.json() as { events?: Array<{ title: string; dateandtime?: { start: string; end: string }; location?: string }> };
+        const events = data.events || [];
+        if (events.length === 0) {
+          return { content: [{ type: "text", text: `No events found for ${targetDate}` }] };
+        }
+        const formatted = events.map((e: { title: string; dateandtime?: { start: string; end: string }; location?: string }) => {
+          const parts = [e.title];
+          if (e.dateandtime) parts.push(`${e.dateandtime.start} - ${e.dateandtime.end}`);
+          if (e.location) parts.push(`Location: ${e.location}`);
+          return parts.join(" | ");
+        }).join("\n");
+        return { content: [{ type: "text", text: `Events for ${targetDate}:\n${formatted}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
   // Record collection and other plugin tools are merged by DashboardServer.start()
 
   // --- run_tool ---
@@ -950,6 +1183,32 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
         return { content: [{ type: "text", text: `Error: ${result.error}\n${result.output}` }] };
       }
       return { content: [{ type: "text", text: result.output }] };
+    },
+  });
+
+  // --- Session transcript extraction ---
+  tools.push({
+    name: "session_extract",
+    description: "Extract insights from recent Claude Code session transcripts (JSONL logs). Reads session files, summarizes them, and uses Haiku to extract decisions, patterns, debugging solutions, and architecture insights. Stores results in memory. Run during daily reflection.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hours_back: { type: "number", description: "How many hours back to look for transcripts (default 24)" },
+      },
+    },
+    async handler(params) {
+      const extractor = loop.getSessionExtractor();
+      if (!extractor) {
+        return { content: [{ type: "text", text: "SessionExtractor not initialized" }] };
+      }
+      const { hours_back } = params as { hours_back?: number };
+      const result = await extractor.extractRecent(hours_back ?? 24);
+      return {
+        content: [{
+          type: "text",
+          text: `Session extraction complete: processed ${result.processed} transcripts, stored ${result.insights} insights`,
+        }],
+      };
     },
   });
 

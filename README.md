@@ -230,6 +230,29 @@ export function tools?(): PluginToolDef[];             // MCP tools registered a
 export function shutdown?(): void;                     // Cleanup on stop
 ```
 
+Plugin frontend components register themselves using `registerSkill()` with a `surface` field that controls where they appear:
+
+```typescript
+import { registerSkill } from "../skills-registry";
+import MyPluginView from "./my-plugin-view";
+
+registerSkill({
+  id: "my-plugin",
+  name: "My Plugin",
+  icon: "#",
+  surface: "sidebar",   // "sidebar" | "apps" | "headless"
+  order: 100,
+  core: false,
+  component: MyPluginView,
+});
+```
+
+| Surface | Where it renders | Required fields |
+|---------|-----------------|-----------------|
+| `sidebar` | Own tab in the sidebar (like Chat, Events, Records) | `component` |
+| `apps` | Card in the Apps grid panel | `url`, `description` |
+| `headless` | No UI — tools and timers only | `tools`, `timers` |
+
 Plugins are personal — they don't ship with the repo. When someone clones HomarUScc, they get a clean core. The agent builds plugins on request and they live entirely in user-space.
 
 ### Dashboard Development

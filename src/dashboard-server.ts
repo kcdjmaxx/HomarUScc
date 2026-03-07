@@ -1,6 +1,7 @@
 // CRC: crc-DashboardServer.md | Seq: seq-event-flow.md
 // Dashboard server — Express + WebSocket for the web dashboard
 import { createServer, type Server as HttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { resolve, join } from "node:path";
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -202,6 +203,11 @@ export class DashboardServer {
       res.json(this.compactionManager.getCompactionStats());
     });
 
+    this.app.post("/api/compaction/reset", (_req, res) => {
+      this.compactionManager.resetCount();
+      res.json({ ok: true, message: "Compaction counter reset to 0" });
+    });
+
     // R408: Return dashboard.skills config map for frontend filtering
     this.app.get("/api/config/skills", (_req, res) => {
       const config = this.loop.getConfig().getAll();
@@ -212,6 +218,26 @@ export class DashboardServer {
     this.app.get("/api/events", (req, res) => {
       const limit = parseInt(req.query.limit as string) || 50;
       res.json(this.loop.getEventHistory().slice(-limit));
+    });
+
+    // Accept external events (e.g. phone call transcripts)
+    this.app.post("/api/events", express.json(), (req, res) => {
+      const { type, source, payload, priority } = req.body;
+      if (!type || !source || !payload) {
+        res.status(400).json({ error: "Missing required fields: type, source, payload" });
+        return;
+      }
+      const event: Event = {
+        id: randomUUID(),
+        type,
+        source,
+        timestamp: Date.now(),
+        payload,
+        priority,
+      };
+      this.loop.emit(event);
+      this.logger.info(`External event injected: ${type} from ${source}`);
+      res.json({ ok: true, id: event.id });
     });
 
     this.app.get("/api/timers", (_req, res) => {
@@ -288,11 +314,13 @@ export class DashboardServer {
             ? { soul: identity.getSoul(), user: identity.getUser(), state: identity.getAgentState(), full: true }
             : { digest: identity.getDigest(), full: false };
           const compactionStats = this.compactionManager.getCompactionStats();
+          const shouldRestart = this.compactionManager.shouldAutoRestart();
           res.json({
             identity: identityPayload,
             events,
             cursor: this.loop.getDeliveryWatermark(),
             compaction: { count: compactionStats.count, loopFailures: compactionStats.loopFailures },
+            ...(shouldRestart && { shouldRestart: true }),
           });
         }
       } catch {
@@ -303,6 +331,11 @@ export class DashboardServer {
     // --- Proxy API routes (used by mcp-proxy.ts) ---
     this.app.get("/api/health", (_req, res) => {
       res.json({ ok: true, state: "running" });
+    });
+
+    // Phone channel: check if Claude Code has an active event loop consumer
+    this.app.get("/api/consumer-status", (_req, res) => {
+      res.json({ active: this.loop.hasActiveConsumer() });
     });
 
     // --- Compaction hooks (called by Claude Code PreCompact/SessionStart hooks) ---
