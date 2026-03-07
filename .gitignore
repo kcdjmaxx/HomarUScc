@@ -44,6 +44,16 @@ dashboard/src/plugins/
 !dashboard/public/favicon.png
 !dashboard/public/favicon.ico
 
+# Audio files
+*.m4a
+*.ogg
+*.wav
+*.mp3
+
+# Personal directories
+journal/
+research/
+
 # OS files
 .DS_Store
 Thumbs.db
