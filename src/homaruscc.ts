@@ -17,6 +17,8 @@ import { registerBuiltinTools } from "./tools/index.js";
 import { TranscriptLogger } from "./transcript-logger.js";
 import { SessionCheckpoint } from "./session-checkpoint.js";
 import { AgentRegistry } from "./agent-registry.js";
+import { FactExtractor } from "./fact-extractor.js";
+import { SessionExtractor } from "./session-extractor.js";
 // VaultIndex and UnifiedSearch live in local/vault-indexer/ (gitignored)
 // Loaded dynamically at runtime if vault config is present
 
@@ -42,6 +44,8 @@ export class HomarUScc {
   private transcriptLogger?: TranscriptLogger;
   private sessionCheckpoint!: SessionCheckpoint;
   private agentRegistry!: AgentRegistry;
+  private factExtractor?: FactExtractor;
+  private sessionExtractor?: SessionExtractor;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private vaultIndex?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -117,6 +121,14 @@ export class HomarUScc {
 
   getAgentRegistry(): AgentRegistry {
     return this.agentRegistry;
+  }
+
+  getFactExtractor(): FactExtractor | undefined {
+    return this.factExtractor;
+  }
+
+  getSessionExtractor(): SessionExtractor | undefined {
+    return this.sessionExtractor;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -303,6 +315,31 @@ export class HomarUScc {
       });
     }
 
+    // 3c. Fact extractor (passive Haiku-based fact extraction from conversations)
+    const feCfg = configData.factExtractor;
+    if (feCfg !== false) {
+      this.factExtractor = new FactExtractor(this.logger, this.memoryIndex, {
+        enabled: (typeof feCfg === "object" ? feCfg?.enabled : true) ?? true,
+        batchSize: typeof feCfg === "object" ? feCfg?.batchSize : undefined,
+        extractionDelayMs: typeof feCfg === "object" ? feCfg?.extractionDelayMs : undefined,
+        model: typeof feCfg === "object" ? feCfg?.model : undefined,
+      });
+      this.registerHandler("message", (event) => {
+        const payload = event.payload as MessagePayload;
+        this.factExtractor?.addTurn({
+          timestamp: event.timestamp,
+          direction: "in",
+          sender: payload.from,
+          text: payload.text,
+        });
+      });
+      this.logger.info("FactExtractor enabled");
+    }
+
+    // 3d. Session transcript extractor (extracts insights from Claude Code JSONL logs)
+    this.sessionExtractor = new SessionExtractor(this.logger, this.memoryIndex);
+    this.logger.info("SessionExtractor initialized");
+
     // 4. Browser service (lazy — browser only launches on first tool use)
     if (configData.browser?.enabled) {
       this.browserService = new BrowserService(this.logger, configData.browser);
@@ -414,6 +451,7 @@ export class HomarUScc {
     await this.skillManager.stopAll();
     this.skillManager.stopWatching();
     await this.transcriptLogger?.stop();
+    await this.factExtractor?.flush();
     this.memoryIndex.stopWatching();
     this.vaultIndex?.close();
 
@@ -487,6 +525,12 @@ export class HomarUScc {
       vault: this.vaultIndex?.getStats() ?? null,
       timers: this.timerService?.getAll().length ?? 0,
       eventHistory: this.eventHistory.length,
+      factExtractor: this.factExtractor?.getStats() ?? null,
+      sessionExtractor: this.sessionExtractor?.getStats() ?? null,
     };
+  }
+
+  hasActiveConsumer(): boolean {
+    return this.eventWaiters.size > 0;
   }
 }

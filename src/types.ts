@@ -127,6 +127,14 @@ export interface ConfigData {
   agents?: AgentsConfig;
   spaces?: SpacesConfig;
   homeAssistant?: HomeAssistantConfig;
+  factExtractor?: FactExtractorConfig | false;
+}
+
+export interface FactExtractorConfig {
+  enabled?: boolean;
+  batchSize?: number;
+  extractionDelayMs?: number;
+  model?: string;
 }
 
 export interface SpacesConfig {
