@@ -174,6 +174,9 @@ Restart Claude Code. HomarUScc's tools will appear automatically. The proxy auto
 | `browser_type` | Type into an input by CSS selector |
 | `browser_evaluate` | Execute JavaScript in the page |
 | `browser_content` | Get page text content |
+| `crm_search` | Fuzzy CRM contact search with Levenshtein matching |
+| `calendar_today` | Fetch today's calendar events from Zoho Calendar |
+| `session_extract` | Analyze Claude Code transcripts for insights and patterns |
 | `run_tool` | Execute any registered tool (bash, read, write, edit, glob, grep, git, web) |
 
 ## MCP Resources
@@ -377,6 +380,20 @@ Max concurrent agents is configurable via `agents.maxConcurrent` in config (defa
 
 **Completion detection:** Agents signal completion by calling `POST /api/agents/:id/complete` with a result summary. This emits an `agent_completed` event that wakes the main event loop. A 30-minute timeout fallback catches agents that fail to call back. No polling needed — results arrive as events.
 
+## Passive Knowledge Capture
+
+HomarUScc continuously extracts structured knowledge from conversations without explicit user action.
+
+**FactExtractor** — Batches conversation turns and sends them to Claude Haiku for extraction of preferences, corrections, patterns, facts, and decisions. Results are stored in the memory index under structured key prefixes (`local/user/preferences/`, `local/user/corrections/`, etc.). Runs in the background during normal conversation.
+
+**SessionExtractor** — Analyzes Claude Code JSONL transcripts (the raw session logs) to extract architecture decisions, debugging solutions, and workflow patterns. Designed to feed the daily reflection timer with deeper insights than real-time extraction can capture.
+
+Both systems complement the agent's explicit reflection cycle (journal entries, prediction error logging, dream cycles) by capturing knowledge that would otherwise be lost between sessions.
+
+## Compaction Auto-Restart
+
+After a configurable number of context compactions (default 8), the event loop signals that a full restart is needed. This prevents degraded performance from accumulated compaction artifacts. The `/nuke` Telegram command provides a manual escape hatch that kills all Claude processes and starts a fresh session.
+
 ## Architecture
 
 HomarUScc is a fork of HomarUS with the agent loop, model router, and HTTP API removed. Claude Code handles all reasoning; HomarUScc just provides the I/O layer.
@@ -396,7 +413,10 @@ Key source files:
 | `src/dashboard-server.ts` | Express + WebSocket dashboard server |
 | `src/dashboard-adapter.ts` | Dashboard channel adapter |
 | `src/memory-index.ts` | SQLite + sqlite-vec hybrid search with dream-aware scoring |
-| `src/compaction-manager.ts` | Auto-flush memory before context compaction |
+| `src/fact-extractor.ts` | Passive fact extraction from conversations via Haiku |
+| `src/session-extractor.ts` | Session transcript analysis for architecture insights |
+| `src/telegram-command-handler.ts` | Telegram slash commands (/ping, /status, /restart, /nuke) |
+| `src/compaction-manager.ts` | Auto-flush memory before context compaction, auto-restart after threshold |
 | `src/session-checkpoint.ts` | Save/restore task context across compaction |
 | `src/agent-registry.ts` | Track background agents with callback completion and timeout fallback |
 | `src/transcript-logger.ts` | Session transcript capture and indexing |
