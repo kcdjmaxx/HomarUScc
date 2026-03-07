@@ -1,0 +1,61 @@
+#!/bin/bash
+# Nuclear restart — kill ALL claude processes system-wide, then start fresh
+# Called by the /nuke Telegram command when /restart fails
+# Env vars: HOMARUSCC_PROJECT_DIR, HOMARUSCC_CHAT_ID, HOMARUSCC_PORT
+
+set -euo pipefail
+
+PROJECT_DIR="${HOMARUSCC_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+PORT="${HOMARUSCC_PORT:-3120}"
+CHAT_ID="${HOMARUSCC_CHAT_ID:-}"
+SESSION_NAME="homaruscc"
+
+report() {
+  local success="$1"
+  local message="$2"
+  if [ -n "$CHAT_ID" ] && [ -n "$PORT" ]; then
+    curl -s -X POST "http://127.0.0.1:${PORT}/api/restart-result" \
+      -H "Content-Type: application/json" \
+      -d "{\"success\":${success},\"message\":\"${message}\"}" \
+      > /dev/null 2>&1 || true
+  fi
+}
+
+echo "[nuke] Starting nuclear restart..."
+
+# Phase 1: Kill ALL tmux sessions with claude in them
+for session in $(tmux list-sessions -F '#{session_name}' 2>/dev/null || true); do
+  echo "[nuke] Killing tmux session: $session"
+  tmux kill-session -t "$session" 2>/dev/null || true
+done
+sleep 1
+
+# Phase 2: Kill ALL claude processes (any invocation)
+echo "[nuke] Killing all claude processes..."
+pkill -f "claude" 2>/dev/null || true
+sleep 2
+
+# Phase 3: Kill any event-loop curl processes
+pkill -f "homaruscc-wait-response" 2>/dev/null || true
+
+# Phase 4: Verify everything is dead
+REMAINING=$(pgrep -f "claude" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$REMAINING" -gt 0 ]; then
+  echo "[nuke] $REMAINING claude processes still alive — force killing"
+  pkill -9 -f "claude" 2>/dev/null || true
+  sleep 1
+fi
+
+# Phase 5: Start fresh tmux session
+echo "[nuke] Starting fresh tmux session..."
+tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR"
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  report "false" "Nuke: killed all processes but failed to create new tmux session"
+  exit 1
+fi
+
+tmux send-keys -t "$SESSION_NAME" 'claude --dangerously-skip-permissions "/homaruscc"' Enter
+
+report "true" "Nuke complete. All claude processes killed, fresh session started. Attach: tmux attach -t ${SESSION_NAME}"
+echo "[nuke] Done. Fresh session '${SESSION_NAME}' started."

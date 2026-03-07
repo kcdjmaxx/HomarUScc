@@ -24,6 +24,7 @@ export class CompactionManager {
   private compactionHistory: CompactionRecord[] = [];
   private pendingCompaction: CompactionRecord | null = null;
   private static readonly COUNTER_FILE = join(homedir(), ".homaruscc", "compaction-count.json");
+  private static readonly MAX_COMPACTIONS = 8; // Auto-restart threshold
 
   // Event loop tracking — set true on first /api/wait call, stays true forever
   private eventLoopActive = false;
@@ -41,6 +42,14 @@ export class CompactionManager {
     } catch {
       return 0;
     }
+  }
+
+  resetCount(): void {
+    this.compactionCount = 0;
+    this.compactionHistory = [];
+    this.pendingCompaction = null;
+    this.saveCount();
+    this.logger.info("Compaction counter reset to 0");
   }
 
   private saveCount(): void {
@@ -295,5 +304,9 @@ export class CompactionManager {
       pending: this.pendingCompaction,
       loopFailures: failures,
     };
+  }
+
+  shouldAutoRestart(): boolean {
+    return this.compactionCount >= CompactionManager.MAX_COMPACTIONS;
   }
 }

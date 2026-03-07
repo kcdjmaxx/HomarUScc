@@ -104,5 +104,25 @@ export class TelegramCommandHandler {
       this.logger.info("Spawned restart-claude script", { pid: child.pid });
       return "Restarting Claude Code...";
     });
+
+    // /nuke — kill ALL claude processes system-wide, then restart fresh
+    this.register("nuke", async (chatId, _args, ctx) => {
+      const scriptPath = resolve(ctx.projectDir, "bin", "nuke-claude");
+
+      const child = spawn("bash", [scriptPath], {
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          HOMARUSCC_CHAT_ID: chatId,
+          HOMARUSCC_PROJECT_DIR: ctx.projectDir,
+          HOMARUSCC_PORT: "3120",
+        },
+      });
+      child.unref();
+
+      this.logger.info("Spawned nuke-claude script", { pid: child.pid });
+      return "\u2622\ufe0f Nuking all Claude processes and restarting from scratch...";
+    });
   }
 }
