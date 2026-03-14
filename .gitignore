@@ -23,9 +23,8 @@ homaruscc.json
 timers.json
 browser-data/
 
-# Claude Code local settings (keep skills/)
+# Claude Code local settings
 .claude/
-!.claude/skills/
 
 # Local user data (CRM, dreams, research, outreach, user context, etc.)
 local/

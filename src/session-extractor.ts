@@ -60,9 +60,11 @@ export class SessionExtractor {
     this.apiKey = options?.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '';
     this.model = options?.model ?? 'claude-haiku-4-5-20251001';
 
-    // Claude Code stores transcripts here for this project
+    // Claude Code stores transcripts in a directory named after the project path
+    // with slashes replaced by dashes. Derive it from the actual CWD.
     this.transcriptDir = options?.transcriptDir ??
-      path.join(process.env.HOME ?? '', '.claude/projects/-Users-maxross-Library-Mobile-Documents-iCloud-md-obsidian-Documents-Kcdjmaxx-Main-Vault-ClawdBot-homaruscc');
+      path.join(process.env.HOME ?? '', '.claude/projects',
+        process.cwd().replace(/\//g, '-').replace(/^-/, ''));
 
     this.stateFile = path.join(process.env.HOME ?? '', '.homaruscc/session-extractor-state.json');
     this.loadState();
