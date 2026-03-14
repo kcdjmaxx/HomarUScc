@@ -15,12 +15,15 @@ import { webFetchTool } from "./web-fetch.js";
 import { webSearchTool } from "./web-search.js";
 import { createMemoryTools } from "./memory.js";
 import { createBrowserTools } from "./browser.js";
+import { createDocsTools } from "./docs.js";
+import type { DocsIndex } from "../docs-index.js";
 
 export function registerBuiltinTools(
   registry: ToolRegistry,
   memoryIndex: MemoryIndex,
   logger: Logger,
   browserService?: BrowserService,
+  docsIndex?: DocsIndex,
 ): void {
   // group:fs
   registry.register(readTool);
@@ -42,6 +45,13 @@ export function registerBuiltinTools(
     registry.register(tool);
   }
 
+  // group:docs
+  if (docsIndex) {
+    for (const tool of createDocsTools(docsIndex)) {
+      registry.register(tool);
+    }
+  }
+
   // group:browser
   if (browserService) {
     for (const tool of createBrowserTools(browserService)) {
@@ -55,6 +65,9 @@ export function registerBuiltinTools(
     webFetchTool.name, webSearchTool.name,
     "memory_search", "memory_get", "memory_store",
   ];
+  if (docsIndex) {
+    tools.push("docs_search", "docs_ingest", "docs_ingest_text", "docs_list", "docs_clear");
+  }
   if (browserService) {
     tools.push("browser_navigate", "browser_snapshot", "browser_screenshot", "browser_click", "browser_type", "browser_evaluate", "browser_content");
   }

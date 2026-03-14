@@ -19,6 +19,7 @@ import { SessionCheckpoint } from "./session-checkpoint.js";
 import { AgentRegistry } from "./agent-registry.js";
 import { FactExtractor } from "./fact-extractor.js";
 import { SessionExtractor } from "./session-extractor.js";
+import { DocsIndex } from "./docs-index.js";
 // VaultIndex and UnifiedSearch live in local/vault-indexer/ (gitignored)
 // Loaded dynamically at runtime if vault config is present
 
@@ -46,6 +47,7 @@ export class HomarUScc {
   private agentRegistry!: AgentRegistry;
   private factExtractor?: FactExtractor;
   private sessionExtractor?: SessionExtractor;
+  private docsIndex?: DocsIndex;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private vaultIndex?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,6 +87,10 @@ export class HomarUScc {
 
   getMemoryIndex(): MemoryIndex {
     return this.memoryIndex;
+  }
+
+  getDocsIndex(): DocsIndex | undefined {
+    return this.docsIndex;
   }
 
   getIdentityManager(): IdentityManager {
@@ -356,8 +362,22 @@ export class HomarUScc {
     this.agentRegistry = new AgentRegistry(this.logger, maxConcurrent);
     this.agentRegistry.setEmitter((e) => this.emit(e));
 
+    // 4d. Docs index (domain-specific vector DBs)
+    this.docsIndex = new DocsIndex(this.logger);
+    if (memoryConfig?.embedding) {
+      const docsEmbProvider = createEmbeddingProvider({
+        provider: memoryConfig.embedding.provider,
+        model: memoryConfig.embedding.model,
+        baseUrl: memoryConfig.embedding.baseUrl,
+        apiKey: memoryConfig.embedding.apiKey,
+        dimensions: memoryConfig.embedding.dimensions,
+      }, this.logger);
+      this.docsIndex.setEmbeddingProvider(docsEmbProvider);
+    }
+    this.logger.info("DocsIndex initialized");
+
     // 5. Register built-in tools
-    registerBuiltinTools(this.toolRegistry, this.memoryIndex, this.logger, this.browserService);
+    registerBuiltinTools(this.toolRegistry, this.memoryIndex, this.logger, this.browserService, this.docsIndex);
 
     // 6. Load tool policies from config
     if (configData.toolPolicies) {
@@ -453,6 +473,7 @@ export class HomarUScc {
     await this.transcriptLogger?.stop();
     await this.factExtractor?.flush();
     this.memoryIndex.stopWatching();
+    this.docsIndex?.close();
     this.vaultIndex?.close();
 
     const remaining = this.eventQueue.clear();
@@ -523,6 +544,7 @@ export class HomarUScc {
       })) ?? [],
       memory: this.memoryIndex.getStats(),
       vault: this.vaultIndex?.getStats() ?? null,
+      docs: this.docsIndex?.listDomains() ?? [],
       timers: this.timerService?.getAll().length ?? 0,
       eventHistory: this.eventHistory.length,
       factExtractor: this.factExtractor?.getStats() ?? null,

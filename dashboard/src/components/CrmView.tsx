@@ -62,6 +62,7 @@ export function CrmView({ messages, send }: CrmViewProps) {
   const [formTags, setFormTags] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [formSource, setFormSource] = useState("manual");
+  const [tagsCollapsed, setTagsCollapsed] = useState(false);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -293,30 +294,45 @@ export function CrmView({ messages, send }: CrmViewProps) {
           onChange={(e) => setSearch(e.target.value)}
         />
         {allTags.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+          <div>
             <button
               style={{
-                background: filterTag === null ? theme.border : "none",
-                border: `1px solid ${filterTag === null ? theme.accentSubtle : theme.inputBorder}`,
-                borderRadius: 12,
-                color: filterTag === null ? theme.accent : theme.textMuted,
-                cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
+                background: "none", border: "none", color: theme.textMuted,
+                cursor: "pointer", fontSize: 11, padding: "2px 0", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: 4, marginBottom: tagsCollapsed ? 0 : 6,
               }}
-              onClick={() => setFilterTag(null)}
-            >All</button>
-            {allTags.map((tag) => (
-              <button
-                key={tag}
-                style={{
-                  background: filterTag === tag ? theme.border : "none",
-                  border: `1px solid ${filterTag === tag ? (TAG_COLORS[tag] ?? defaultTagColor) : (TAG_COLORS[tag] ?? defaultTagColor)}`,
-                  borderRadius: 12,
-                  color: filterTag === tag ? theme.accent : theme.textMuted,
-                  cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
-                }}
-                onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-              >{tag}</button>
-            ))}
+              onClick={() => setTagsCollapsed(!tagsCollapsed)}
+            >
+              <span style={{ display: "inline-block", transform: tagsCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s", fontSize: 10 }}>&#9660;</span>
+              Tags{filterTag ? `: ${filterTag}` : ""}
+            </button>
+            {!tagsCollapsed && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+                <button
+                  style={{
+                    background: filterTag === null ? theme.border : "none",
+                    border: `1px solid ${filterTag === null ? theme.accentSubtle : theme.inputBorder}`,
+                    borderRadius: 12,
+                    color: filterTag === null ? theme.accent : theme.textMuted,
+                    cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
+                  }}
+                  onClick={() => setFilterTag(null)}
+                >All</button>
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    style={{
+                      background: filterTag === tag ? theme.border : "none",
+                      border: `1px solid ${filterTag === tag ? (TAG_COLORS[tag] ?? defaultTagColor) : (TAG_COLORS[tag] ?? defaultTagColor)}`,
+                      borderRadius: 12,
+                      color: filterTag === tag ? theme.accent : theme.textMuted,
+                      cursor: "pointer", fontSize: 11, padding: "3px 10px", fontFamily: "inherit",
+                    }}
+                    onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                  >{tag}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

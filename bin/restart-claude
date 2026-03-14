@@ -29,6 +29,9 @@ if [ -n "$CHAT_ID" ] && [ -n "$PORT" ]; then
     > /dev/null 2>&1 || true
 fi
 
+# Reset compaction counter so new session starts clean
+echo '{"count":0}' > "$HOME/.homaruscc/compaction-count.json"
+
 # Kill existing tmux session if it exists
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   tmux kill-session -t "$SESSION_NAME"

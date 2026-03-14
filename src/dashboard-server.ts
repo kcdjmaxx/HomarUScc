@@ -20,13 +20,21 @@ import { AppDataStore } from "./app-data-store.js";
 import { PluginLoader } from "./plugin-loader.js";
 
 interface WsMessage {
-  type: "chat" | "search" | "status" | "events";
+  type: "chat" | "search" | "status" | "events" | "agent-chat";
   payload: unknown;
 }
 
 interface WsOutbound {
-  type: "chat" | "event" | "status" | "search_results" | "error";
+  type: "chat" | "event" | "status" | "search_results" | "error" | "agent-chat";
   payload: unknown;
+}
+
+interface AgentChatMessage {
+  id: string;
+  from: string;      // "caul" | "hal" | external agent name
+  text: string;
+  timestamp: number;
+  replyTo?: string;   // id of message being replied to
 }
 
 export class DashboardServer {
@@ -365,6 +373,11 @@ export class DashboardServer {
       res.json({ ok: true });
     });
 
+    this.app.post("/api/compaction-reset", (_req, res) => {
+      this.compactionManager.resetCount();
+      res.json({ ok: true });
+    });
+
     // --- Agent Registry endpoints (R137, R138, R139) ---
     this.app.post("/api/agents", express.json(), (req, res) => {
       const { id, description } = req.body as { id: string; description: string };
@@ -587,6 +600,328 @@ export class DashboardServer {
       const data = readKanban();
       data.tasks = data.tasks.filter((t) => t.id !== req.params.id);
       writeKanban(data);
+      res.json({ ok: true });
+    });
+
+    // --- Journal CRUD (JSON files) ---
+    const journalDir = join(homedir(), ".homaruscc", "apps", "journal", "entries");
+
+    const ensureJournalDir = () => {
+      if (!existsSync(journalDir)) mkdirSync(journalDir, { recursive: true });
+    };
+
+    const readJournalEntry = (id: string): Record<string, unknown> | null => {
+      const filePath = join(journalDir, `${id}.json`);
+      if (!existsSync(filePath)) return null;
+      try { return JSON.parse(readFileSync(filePath, "utf8")); }
+      catch { return null; }
+    };
+
+    const writeJournalEntry = (entry: Record<string, unknown>): void => {
+      ensureJournalDir();
+      writeFileSync(join(journalDir, `${entry.id}.json`), JSON.stringify(entry, null, 2));
+    };
+
+    const readAllJournalEntries = (): Record<string, unknown>[] => {
+      ensureJournalDir();
+      const entries: Record<string, unknown>[] = [];
+      for (const file of readdirSync(journalDir)) {
+        if (!file.endsWith(".json")) continue;
+        try { entries.push(JSON.parse(readFileSync(join(journalDir, file), "utf8"))); }
+        catch { /* skip corrupt files */ }
+      }
+      return entries.sort((a, b) =>
+        new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime()
+      );
+    };
+
+    // AI analysis using Claude Haiku
+    const analyzeJournalEntry = async (content: string, entryId: string): Promise<void> => {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return;
+      try {
+        const { default: Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey });
+        const response = await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 512,
+          messages: [{
+            role: "user",
+            content: `Analyze this journal entry. Return ONLY valid JSON with these fields:
+- sentiment: "positive" | "neutral" | "negative"
+- sentimentScore: number 0-1 (0=very negative, 1=very positive)
+- emotions: object with keys from [joy, motivated, anxious, grateful, sad, angry, peaceful], values 0-100, only include emotions above 5
+- suggestedTags: string[] (2-5 suggested tags based on content)
+- category: one of: personal, idea, reflection, work, creative, health, relationship
+
+Journal entry:
+${content.slice(0, 2000)}`,
+          }],
+        });
+        const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+        // Extract JSON from response (handle possible markdown fences)
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return;
+        const analysis = JSON.parse(jsonMatch[0]);
+
+        // Read entry, merge analysis, write back
+        const entry = readJournalEntry(entryId);
+        if (!entry) return;
+        if (analysis.sentiment) entry.sentiment = analysis.sentiment;
+        if (typeof analysis.sentimentScore === "number") entry.sentimentScore = analysis.sentimentScore;
+        if (analysis.emotions && typeof analysis.emotions === "object") entry.emotions = analysis.emotions;
+        if (Array.isArray(analysis.suggestedTags) && (entry.tags as string[]).length === 0) {
+          entry.tags = analysis.suggestedTags;
+        }
+        if (analysis.category && entry.category === "personal") entry.category = analysis.category;
+        entry.updatedAt = new Date().toISOString();
+        writeJournalEntry(entry);
+      } catch (err) {
+        this.logger.warn("Journal AI analysis failed", { error: String(err) });
+      }
+    };
+
+    // List all entries (sorted by createdAt desc)
+    this.app.get("/api/journal/entries", (_req, res) => {
+      res.json(readAllJournalEntries());
+    });
+
+    // Get single entry
+    this.app.get("/api/journal/entries/:id", (req, res) => {
+      const entry = readJournalEntry(req.params.id);
+      if (!entry) { res.status(404).json({ error: "Entry not found" }); return; }
+      res.json(entry);
+    });
+
+    // Create entry
+    this.app.post("/api/journal/entries", express.json(), (req, res) => {
+      ensureJournalDir();
+      const now = new Date().toISOString();
+      const id = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const entry: Record<string, unknown> = {
+        id,
+        title: req.body.title ?? "",
+        content: req.body.content ?? "",
+        tags: Array.isArray(req.body.tags) ? req.body.tags : [],
+        category: req.body.category ?? "personal",
+        private: req.body.private ?? false,
+        sentiment: "neutral",
+        sentimentScore: 0.5,
+        emotions: {},
+        createdAt: now,
+        updatedAt: now,
+      };
+      writeJournalEntry(entry);
+      res.json(entry);
+
+      // Run AI analysis in background (non-blocking)
+      const content = entry.content as string;
+      if (content.trim()) {
+        analyzeJournalEntry(content, id).catch(() => {});
+      }
+
+      // Index non-private entries in memory system
+      if (!entry.private && content.trim()) {
+        const titleSlug = (entry.title as string || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+        const dateSlug = now.slice(0, 10);
+        const memoryKey = `local/journal/${dateSlug}-${titleSlug}.md`;
+        const memoryTool = this.mcpTools.find((t) => t.name === "memory_store");
+        if (memoryTool) {
+          memoryTool.handler({ key: memoryKey, content: `# ${entry.title || "Journal Entry"}\n\n${content}` }).catch(() => {});
+        }
+      }
+    });
+
+    // Update entry
+    this.app.patch("/api/journal/entries/:id", express.json(), (req, res) => {
+      const entry = readJournalEntry(req.params.id);
+      if (!entry) { res.status(404).json({ error: "Entry not found" }); return; }
+      const { title, content, tags, category, private: priv } = req.body;
+      if (title !== undefined) entry.title = title;
+      if (content !== undefined) entry.content = content;
+      if (tags !== undefined) entry.tags = tags;
+      if (category !== undefined) entry.category = category;
+      if (priv !== undefined) entry.private = priv;
+      entry.updatedAt = new Date().toISOString();
+      writeJournalEntry(entry);
+      res.json(entry);
+
+      // Re-analyze if content changed
+      if (content !== undefined && (content as string).trim()) {
+        analyzeJournalEntry(content as string, req.params.id).catch(() => {});
+      }
+    });
+
+    // Delete entry
+    this.app.delete("/api/journal/entries/:id", (req, res) => {
+      const filePath = join(journalDir, `${req.params.id}.json`);
+      if (existsSync(filePath)) unlinkSync(filePath);
+      res.json({ ok: true });
+    });
+
+    // Stats endpoint
+    this.app.get("/api/journal/stats", (_req, res) => {
+      const entries = readAllJournalEntries();
+      if (entries.length === 0) {
+        res.json({ totalEntries: 0, currentStreak: 0, longestStreak: 0, averageMood: 0.5, recentEmotions: {}, entriesByCategory: {} });
+        return;
+      }
+
+      // Streak calculation
+      const entryDates = Array.from(new Set(
+        entries.map((e) => new Date(e.createdAt as string).toISOString().slice(0, 10))
+      )).sort().reverse();
+
+      let currentStreak = 0;
+      let longestStreak = 0;
+      let streak = 0;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      for (let i = 0; i < entryDates.length; i++) {
+        const d = new Date(entryDates[i]);
+        d.setHours(0, 0, 0, 0);
+        const expected = new Date(today);
+        expected.setDate(expected.getDate() - i);
+
+        if (d.getTime() === expected.getTime()) {
+          streak++;
+        } else {
+          if (i === 0) {
+            // Check if yesterday matches (streak still valid if no entry today yet)
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (d.getTime() === yesterday.getTime()) {
+              streak = 1;
+              continue;
+            }
+          }
+          break;
+        }
+      }
+      currentStreak = streak;
+
+      // Longest streak (simple scan)
+      let tempStreak = 1;
+      longestStreak = 1;
+      for (let i = 1; i < entryDates.length; i++) {
+        const prev = new Date(entryDates[i - 1]);
+        const curr = new Date(entryDates[i]);
+        const diffDays = Math.round((prev.getTime() - curr.getTime()) / (24 * 60 * 60 * 1000));
+        if (diffDays === 1) {
+          tempStreak++;
+          longestStreak = Math.max(longestStreak, tempStreak);
+        } else {
+          tempStreak = 1;
+        }
+      }
+      longestStreak = Math.max(longestStreak, currentStreak);
+
+      // Average mood
+      const scores = entries.map((e) => (e.sentimentScore as number) ?? 0.5);
+      const averageMood = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+      // Recent emotions (last 7 days)
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const recentEntries = entries.filter((e) => new Date(e.createdAt as string).getTime() > weekAgo);
+      const emotionSums: Record<string, number[]> = {};
+      for (const e of recentEntries) {
+        const emotions = (e.emotions ?? {}) as Record<string, number>;
+        for (const [k, v] of Object.entries(emotions)) {
+          if (!emotionSums[k]) emotionSums[k] = [];
+          emotionSums[k].push(v);
+        }
+      }
+      const recentEmotions: Record<string, number> = {};
+      for (const [k, vals] of Object.entries(emotionSums)) {
+        recentEmotions[k] = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      }
+
+      // Entries by category
+      const entriesByCategory: Record<string, number> = {};
+      for (const e of entries) {
+        const cat = e.category as string ?? "personal";
+        entriesByCategory[cat] = (entriesByCategory[cat] ?? 0) + 1;
+      }
+
+      res.json({ totalEntries: entries.length, currentStreak, longestStreak, averageMood, recentEmotions, entriesByCategory });
+    });
+
+    // --- Agent Chat endpoints (Caul ↔ Hal collaboration) ---
+    const agentChatPath = join(homedir(), ".homaruscc", "agent-chat.json");
+
+    const readAgentChat = (): AgentChatMessage[] => {
+      if (!existsSync(agentChatPath)) return [];
+      try { return JSON.parse(readFileSync(agentChatPath, "utf8")); }
+      catch { return []; }
+    };
+
+    const writeAgentChat = (messages: AgentChatMessage[]): void => {
+      writeFileSync(agentChatPath, JSON.stringify(messages, null, 2));
+    };
+
+    // GET /api/agent-chat — fetch message history
+    this.app.get("/api/agent-chat", (req, res) => {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const since = req.query.since ? parseInt(req.query.since as string) : 0;
+      let messages = readAgentChat();
+      if (since) messages = messages.filter(m => m.timestamp > since);
+      res.json(messages.slice(-limit));
+    });
+
+    // POST /api/agent-chat — send a message (used by both Caul and Hal)
+    this.app.post("/api/agent-chat", express.json(), (req, res) => {
+      const { from, text, replyTo } = req.body as { from: string; text: string; replyTo?: string };
+      if (!from || !text) {
+        res.status(400).json({ error: "Missing required fields: from, text" });
+        return;
+      }
+      const message: AgentChatMessage = {
+        id: randomUUID(),
+        from,
+        text,
+        timestamp: Date.now(),
+        ...(replyTo && { replyTo }),
+      };
+      const messages = readAgentChat();
+      messages.push(message);
+      // Keep last 500 messages
+      const trimmed = messages.slice(-500);
+      writeAgentChat(trimmed);
+
+      // Broadcast to dashboard WebSocket clients
+      this.broadcast({ type: "agent-chat", payload: message });
+
+      // Emit as event so Claude Code picks it up via /api/wait
+      this.loop.emit({
+        id: randomUUID(),
+        type: "agent_message",
+        source: `agent:${from}`,
+        timestamp: message.timestamp,
+        payload: message,
+      });
+
+      this.logger.info(`Agent chat: ${from} sent message`, { messageId: message.id });
+      res.json(message);
+
+      // Ping Hal's webhook on EC2 if the message isn't from Hal
+      if (from !== "hal") {
+        const webhookUrl = "http://100.73.65.3:3121/webhook/agent-chat";
+        fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from, text }),
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => {
+          // Webhook unreachable — Hal will pick it up on next heartbeat
+          this.logger.warn("Agent chat webhook unreachable (EC2 may be offline)");
+        });
+      }
+    });
+
+    // DELETE /api/agent-chat — clear history
+    this.app.delete("/api/agent-chat", (_req, res) => {
+      writeAgentChat([]);
       res.json({ ok: true });
     });
 
@@ -955,6 +1290,32 @@ export class DashboardServer {
         this.sendTo(ws, {
           type: "event",
           payload: this.loop.getEventHistory().slice(-limit),
+        });
+        break;
+      }
+      case "agent-chat": {
+        // Dashboard user watching can also inject messages (as "max" observer)
+        const { from, text } = msg.payload as { from: string; text: string };
+        if (!from || !text) return;
+        // Post through the REST endpoint logic
+        const agentChatPath = join(homedir(), ".homaruscc", "agent-chat.json");
+        const message: AgentChatMessage = {
+          id: randomUUID(),
+          from,
+          text,
+          timestamp: Date.now(),
+        };
+        let messages: AgentChatMessage[] = [];
+        try { messages = JSON.parse(readFileSync(agentChatPath, "utf8")); } catch {}
+        messages.push(message);
+        writeFileSync(agentChatPath, JSON.stringify(messages.slice(-500), null, 2));
+        this.broadcast({ type: "agent-chat", payload: message });
+        this.loop.emit({
+          id: randomUUID(),
+          type: "agent_message",
+          source: `agent:${from}`,
+          timestamp: message.timestamp,
+          payload: message,
         });
         break;
       }

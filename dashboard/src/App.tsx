@@ -7,11 +7,13 @@ import { getSidebarSkills, getDefaultViewId } from "./skills-registry";
 
 // R404: Import all sidebar skill files to trigger self-registration
 import "./components/Chat";
+import "./components/AgentChat";
 import "./components/EventLog";
 import "./components/StatusPanel";
 import "./components/MemoryBrowser";
 import "./components/KanbanView";
 import "./components/CrmView";
+import "./components/JournalView";
 import "./components/SpacesView";
 import "./components/AppsView";
 

@@ -194,6 +194,129 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- docs_search ---
+  tools.push({
+    name: "docs_search",
+    description: "Search a domain-specific documentation index. Each domain has its own vector DB (e.g., 'touchdesigner', 'openclaw'). Use docs_list to see available domains.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name (e.g., 'touchdesigner'). Use '*' to search all domains." },
+        query: { type: "string", description: "Search query" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["domain", "query"],
+    },
+    async handler(params) {
+      const { domain, query, limit = 10 } = params as { domain: string; query: string; limit?: number };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      const results = domain === "*"
+        ? await docsIndex.searchAll(query, limit)
+        : await docsIndex.search(domain, query, limit);
+      if (results.length === 0) {
+        return { content: [{ type: "text", text: `No results found in domain "${domain}".` }] };
+      }
+      const formatted = results.map((r, i) =>
+        `[${i + 1}] [${r.domain}] ${r.path} (score: ${r.score.toFixed(3)})\n${r.content.slice(0, 500)}`
+      ).join("\n\n---\n\n");
+      return { content: [{ type: "text", text: formatted }] };
+    },
+  });
+
+  // --- docs_ingest ---
+  tools.push({
+    name: "docs_ingest",
+    description: "Ingest files into a domain-specific documentation index. Accepts a file path or directory. Supports .md, .txt, .html, .json, .yaml, .yml, .rst, .xml files.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name (e.g., 'touchdesigner')" },
+        path: { type: "string", description: "File or directory path to ingest" },
+      },
+      required: ["domain", "path"],
+    },
+    async handler(params) {
+      const { domain, path } = params as { domain: string; path: string };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      try {
+        const result = await docsIndex.ingest(domain, path);
+        return { content: [{ type: "text", text: `Ingested into "${domain}": ${result.filesProcessed} files, ${result.chunksCreated} chunks` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Ingest failed: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- docs_ingest_text ---
+  tools.push({
+    name: "docs_ingest_text",
+    description: "Ingest raw text content into a domain documentation index without saving to disk.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name (e.g., 'touchdesigner')" },
+        key: { type: "string", description: "Unique key for this content (e.g., 'api/operators/moviefilein')" },
+        content: { type: "string", description: "Text content to index" },
+      },
+      required: ["domain", "key", "content"],
+    },
+    async handler(params) {
+      const { domain, key, content } = params as { domain: string; key: string; content: string };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      try {
+        const result = await docsIndex.ingestText(domain, key, content);
+        return { content: [{ type: "text", text: `Ingested into "${domain}" as "${key}": ${result.chunksCreated} chunks` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Ingest failed: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- docs_list ---
+  tools.push({
+    name: "docs_list",
+    description: "List all available documentation domains and their stats.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    async handler() {
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      const domains = docsIndex.listDomains();
+      if (domains.length === 0) {
+        return { content: [{ type: "text", text: "No documentation domains indexed yet. Use docs_ingest to add one." }] };
+      }
+      const formatted = domains.map((d) =>
+        `${d.domain}: ${d.stats.fileCount} files, ${d.stats.chunkCount} chunks`
+      ).join("\n");
+      return { content: [{ type: "text", text: formatted }] };
+    },
+  });
+
+  // --- docs_clear ---
+  tools.push({
+    name: "docs_clear",
+    description: "Clear a documentation domain, removing all indexed content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name to clear" },
+      },
+      required: ["domain"],
+    },
+    async handler(params) {
+      const { domain } = params as { domain: string };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      await docsIndex.clearDomain(domain);
+      return { content: [{ type: "text", text: `Domain "${domain}" cleared.` }] };
+    },
+  });
+
   // --- timer_schedule ---
   tools.push({
     name: "timer_schedule",

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# HomarUScc first-run setup
+# Creates ~/.homaruscc directory structure and launches the alignment interview
+# to generate identity files (soul.md, user.md, state.md, preferences.md, disagreements.md).
+
+set -euo pipefail
+
+HOMARUSCC_DIR="${HOMARUSCC_DIR:-$HOME/.homaruscc}"
+
+echo "=== HomarUScc Setup ==="
+echo ""
+
+# 1. Create directory structure
+dirs=(
+  "$HOMARUSCC_DIR"
+  "$HOMARUSCC_DIR/identity"
+  "$HOMARUSCC_DIR/journal"
+  "$HOMARUSCC_DIR/memory"
+  "$HOMARUSCC_DIR/secrets"
+)
+
+for dir in "${dirs[@]}"; do
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir"
+    echo "Created $dir"
+  fi
+done
+
+# 2. Create config.json if it doesn't exist
+if [ ! -f "$HOMARUSCC_DIR/config.json" ]; then
+  cat > "$HOMARUSCC_DIR/config.json" << 'CONF'
+{
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "botToken": ""
+    }
+  },
+  "memory": {
+    "extraPaths": [
+      "~/.homaruscc/identity",
+      "~/.homaruscc/journal"
+    ]
+  },
+  "timers": {
+    "defaults": []
+  }
+}
+CONF
+  echo "Created $HOMARUSCC_DIR/config.json (edit to add Telegram bot token)"
+fi
+
+# 3. Create .env template if it doesn't exist
+if [ ! -f "$HOMARUSCC_DIR/.env" ]; then
+  cat > "$HOMARUSCC_DIR/.env" << 'ENV'
+# Telegram Bot Token (get from @BotFather)
+TELEGRAM_BOT_TOKEN=
+
+# Optional: Anthropic API key for phone/voice features
+# ANTHROPIC_API_KEY=
+ENV
+  echo "Created $HOMARUSCC_DIR/.env (edit to add tokens)"
+fi
+
+# 4. Check for identity files
+if [ -f "$HOMARUSCC_DIR/identity/soul.md" ]; then
+  echo ""
+  echo "Identity files already exist at $HOMARUSCC_DIR/identity/"
+  echo "Skipping alignment interview. Delete identity files to re-run."
+  echo ""
+  echo "Setup complete. Run: npx homaruscc"
+  exit 0
+fi
+
+# 5. Launch alignment interview
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ALIGNMENT_DIR="$PROJECT_DIR/../alignment-generator"
+
+echo ""
+echo "Next step: Run the Alignment Interview to generate your identity files."
+echo "This is a browser-based questionnaire that maps your values and preferences"
+echo "into files your agent can use from day one."
+echo ""
+
+if [ -f "$ALIGNMENT_DIR/index.html" ]; then
+  echo "Opening alignment interview..."
+  echo "  1. Complete the interview (select 'HomarUScc' format)"
+  echo "  2. Download the identity kit"
+  echo "  3. Move the files to $HOMARUSCC_DIR/identity/"
+  echo ""
+  open "$ALIGNMENT_DIR/index.html" 2>/dev/null || echo "Open $ALIGNMENT_DIR/index.html in your browser"
+else
+  echo "Alignment interview not found at $ALIGNMENT_DIR"
+  echo "You can create identity files manually in $HOMARUSCC_DIR/identity/:"
+  echo "  soul.md      - Agent identity and values"
+  echo "  user.md      - About you (the human)"
+  echo "  state.md     - Session continuity"
+  echo "  preferences.md - Agent's emergent preferences"
+  echo "  disagreements.md - Times the agent pushed back"
+fi
+
+echo ""
+echo "After identity files are in place, run: npx homaruscc"

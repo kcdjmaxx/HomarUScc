@@ -53,6 +53,11 @@ dashboard/src/plugins/
 # Personal directories
 journal/
 research/
+planning/
+
+# Personal dashboard components
+dashboard/src/components/AgentChat.tsx
+dashboard/src/components/JournalView.tsx
 
 # OS files
 .DS_Store
