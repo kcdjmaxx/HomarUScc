@@ -69,7 +69,19 @@ cp .env.example ~/.homaruscc/.env
 
 ### 3. Set up identity
 
-HomarUScc loads identity files from `~/.homaruscc/identity/` to shape your assistant's personality, what it knows about you, and its evolving self-knowledge.
+HomarUScc loads identity files from `~/.homaruscc/identity/` (or `~/.homarus/identity/`) to shape your assistant's personality, what it knows about you, and its evolving self-knowledge.
+
+**Recommended: Run the alignment interview**
+
+The `/align` command walks you through a structured 10-domain interview (~30-45 minutes) that maps your values, communication style, and boundaries into identity files. It's how a new agent learns who you are.
+
+```
+/align
+```
+
+The interview covers: communication style, decision-making, autonomy preferences, intellectual style, work philosophy, ethics, AI relationships, creative sensibility, conflict handling, and life goals. Progress auto-saves after each domain — if interrupted, `/align` picks up where you left off. On first boot, HomarUScc will suggest running `/align` automatically.
+
+**Alternative: Manual setup**
 
 ```bash
 mkdir -p ~/.homaruscc/identity
