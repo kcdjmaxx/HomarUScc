@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Install HomarUS skills into .claude/skills/
+# Non-destructive: skips files that already exist (preserves user customizations)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+SOURCE_DIR="$PROJECT_DIR/skills"
+TARGET_DIR="$PROJECT_DIR/.claude/skills"
+
+if [ ! -d "$SOURCE_DIR" ]; then
+  echo "No skills/ directory found at $SOURCE_DIR"
+  exit 1
+fi
+
+mkdir -p "$TARGET_DIR"
+
+installed=0
+skipped=0
+
+for skill_dir in "$SOURCE_DIR"/*/; do
+  skill_name="$(basename "$skill_dir")"
+  target_skill_dir="$TARGET_DIR/$skill_name"
+  mkdir -p "$target_skill_dir"
+
+  for file in "$skill_dir"*; do
+    [ -f "$file" ] || continue
+    filename="$(basename "$file")"
+    target_file="$target_skill_dir/$filename"
+
+    if [ -f "$target_file" ]; then
+      skipped=$((skipped + 1))
+    else
+      cp "$file" "$target_file"
+      installed=$((installed + 1))
+    fi
+  done
+done
+
+echo "Skills installed: $installed new, $skipped skipped (already exist)"
+echo "Location: $TARGET_DIR"

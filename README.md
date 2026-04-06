@@ -51,6 +51,7 @@ git clone https://github.com/kcdjmaxx/HomarUScc.git
 cd HomarUScc
 npm install
 npm run build
+npm run setup    # installs skills to .claude/skills/
 ```
 
 ### 2. Configure
