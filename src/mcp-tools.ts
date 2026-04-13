@@ -18,33 +18,41 @@ export interface McpToolDef {
 type DetailLevel = "index" | "summary" | "full";
 
 function extractSentences(content: string, count: number): string {
+  const maxLen = count === 1 ? 80 : 200;
   let text = content;
-  // Strip YAML frontmatter
   if (text.startsWith("---")) {
     const end = text.indexOf("---", 3);
     if (end !== -1) text = text.slice(end + 3);
   }
-  // Skip markdown headers and empty lines to find prose
   const lines = text.split("\n");
   const proseLines: string[] = [];
+  let firstHeader = "";
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (trimmed.startsWith("#")) continue;
+    if (trimmed.startsWith("#")) {
+      if (!firstHeader) firstHeader = trimmed.replace(/^#+\s*/, "");
+      continue;
+    }
     if (trimmed.startsWith("---")) continue;
     if (trimmed.startsWith("```")) break;
+    if (trimmed.startsWith("|") && trimmed.includes("|", 1)) continue;
     proseLines.push(trimmed);
   }
   const prose = proseLines.join(" ");
-  if (!prose) return content.slice(0, 80).trim();
-  // Split on sentence boundaries
+  if (!prose) return (firstHeader || content.slice(0, maxLen)).slice(0, maxLen).trim();
   const sentences = prose.match(/[^.!?]+[.!?]+/g);
   if (sentences && sentences.length > 0) {
-    return sentences.slice(0, count).join(" ").trim();
+    let result = "";
+    for (let i = 0; i < Math.min(count, sentences.length); i++) {
+      const next = result ? result + " " + sentences[i].trim() : sentences[i].trim();
+      if (next.length > maxLen) break;
+      result = next;
+    }
+    return (result || sentences[0].trim().slice(0, maxLen)).trim();
   }
-  // Fallback: first N words
   const words = prose.split(/\s+/);
-  return words.slice(0, count * 15).join(" ");
+  return words.slice(0, count * 12).join(" ").slice(0, maxLen);
 }
 
 function formatResult(r: { path: string; content: string; score: number }, i: number, detail: DetailLevel): string {
