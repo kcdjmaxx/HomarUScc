@@ -1,11 +1,11 @@
-# Progressive Disclosure Search — extractSentences Optimization
+# Retrieval Boost Tuning
 
 ```yaml
-target_file: src/mcp-tools.ts
-eval_command: node evals/progressive-disclosure-eval.mjs
+target_file: src/memory-index.ts
+eval_command: node evals/retrieval-boost-eval.mjs
 metric_key: score
 direction: maximize
-max_experiments: 15
+max_experiments: 10
 experiment_timeout: 60
 metric_format: json_stdout
 cooldown_seconds: 3
@@ -13,38 +13,30 @@ cooldown_seconds: 3
 
 ## Research Direction
 
-Optimize the `extractSentences` function in `src/mcp-tools.ts` (defined near the top of the file, before `createMcpTools`). This function extracts a compact first-sentence summary from memory search result content. It is used by the progressive disclosure search feature to reduce token usage by ~60-70%.
+Optimize the retrieval-weighted scoring boost in `src/memory-index.ts`. The boost is applied in the `search()` method after decay and dream scoring. It multiplies each result's score by `min(1 + log(count+1) * retrievalBoost, retrievalBoostCap)` where `count` is the number of times that path has been retrieved before.
 
-The eval measures three things weighted into a combined score (0-1):
-- **Token reduction** (40% weight): How much smaller is "index" mode vs "full" mode
-- **Sentence quality** (50% weight): Does the extracted sentence contain informative content words, avoid metadata noise, end with proper punctuation, and cover key terms from the full content
-- **Floor quality** (10% bonus): Whether the worst extraction is still above 0.3 quality
+The eval measures:
+- **Latency** (30% weight): Search must stay under 200ms. Currently 111ms.
+- **Score spread** (30% weight): The gap between top and bottom results. More spread = better discrimination.
+- **Rank alignment** (30% weight): Whether top results match frequently-retrieved memories.
+- **Utilization rate** (10% weight): What fraction of memories are being used.
 
-Current baseline: 0.612. Key weaknesses to address:
+Current baseline: 0.606. Current boost: 0.05, cap: 1.5.
 
-1. **Markdown tables**: Content starting with `|` pipes gets included as "prose" — should be skipped or summarized differently
-2. **Bullet lists without sentences**: Lists like `- Name: value` don't have sentence-ending punctuation, triggering the word-count fallback which produces low-quality results
-3. **Code blocks**: Content after triple-backtick fences should be skipped entirely
-4. **Headers as content**: Lines starting with `#` are skipped, but their text is informative — consider using header text as the summary when no prose follows
-5. **Short content**: Files with very little text get minimal token reduction — consider returning the full content for very short results (< 100 chars)
-6. **YAML frontmatter values**: Tags and metadata in frontmatter sometimes leak through
+Key weakness: rank alignment is only 6.7% — the boost isn't strong enough to meaningfully rerank results yet.
 
 ## Constraints
 
-- Only modify the `extractSentences` function and the `formatResult` function that calls it
-- Do NOT modify any other tool handlers, the search logic, or the memory_get tool
-- Do NOT add new dependencies or imports (existsSync and readFileSync are already imported)
-- The function signature must remain: `extractSentences(content: string, count: number): string`
-- The function must handle empty/null content gracefully
-- Keep the function under 60 lines — it should be fast and simple
+- Only modify the retrieval boost section in `search()` and the constructor defaults
+- Do NOT modify the retrieval_log table, logRetrievals, or stats methods
+- Do NOT modify other scoring (decay, dream, vector, FTS)
+- Keep latency under 200ms — the getRetrievalCount query adds overhead per result
+- The boost must have a hard cap to prevent popularity runaway
 
 ## Strategy
 
-Priority order of approaches to try:
-
-1. **Better list handling**: When content is mostly bullet points (`- item`), extract the first 2-3 list items as the summary instead of trying sentence splitting
-2. **Header-as-fallback**: When no prose is found after skipping headers, use the first header's text as the summary (e.g., "# User" -> "User")
-3. **Table skipping**: Skip lines that look like markdown table rows (`| col | col |`)
-4. **Short content passthrough**: If the total prose content is under 100 chars, return it all (no reduction needed for tiny content)
-5. **Smarter sentence boundary detection**: Handle abbreviations (Mr., Dr., e.g.) and URLs that contain dots
-6. **Multi-line frontmatter handling**: Ensure YAML arrays and nested values in frontmatter are fully stripped
+1. Increase boost factor from 0.05 to see if alignment improves
+2. Try different log bases (log2, log10) for the boost curve
+3. Try a recency-weighted boost (recent retrievals count more)
+4. Batch the retrieval count query instead of per-result
+5. Try a threshold approach: only boost if count > N

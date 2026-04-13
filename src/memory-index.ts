@@ -51,6 +51,8 @@ export class MemoryIndex {
   private dreamBaseWeight: number;
   private mmrEnabled: boolean;
   private mmrLambda: number;
+  private retrievalBoost: number;
+  private retrievalBoostCap: number;
   private indexedPaths: string[] = [];
   private watcher: FSWatcher | null = null;
   private logger: Logger;
@@ -69,6 +71,8 @@ export class MemoryIndex {
     dreamBaseWeight?: number;
     mmrEnabled?: boolean;
     mmrLambda?: number;
+    retrievalBoost?: number;
+    retrievalBoostCap?: number;
   }) {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
@@ -83,6 +87,8 @@ export class MemoryIndex {
     this.dreamBaseWeight = options?.dreamBaseWeight ?? 0.5;
     this.mmrEnabled = options?.mmrEnabled ?? true;
     this.mmrLambda = options?.mmrLambda ?? 0.7;
+    this.retrievalBoost = options?.retrievalBoost ?? 0.05;
+    this.retrievalBoostCap = options?.retrievalBoostCap ?? 1.5;
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider): void {
@@ -109,6 +115,8 @@ export class MemoryIndex {
     if (config.ftsWeight !== undefined) this.ftsWeight = config.ftsWeight;
     if (config.mmrEnabled !== undefined) this.mmrEnabled = config.mmrEnabled;
     if (config.mmrLambda !== undefined) this.mmrLambda = config.mmrLambda;
+    if ((config as Record<string, unknown>).retrievalBoost !== undefined) this.retrievalBoost = (config as Record<string, unknown>).retrievalBoost as number;
+    if ((config as Record<string, unknown>).retrievalBoostCap !== undefined) this.retrievalBoostCap = (config as Record<string, unknown>).retrievalBoostCap as number;
   }
 
   async initialize(dbPath: string): Promise<void> {
@@ -167,6 +175,23 @@ export class MemoryIndex {
     } catch {
       this.logger.debug("Vector table creation skipped");
     }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS retrieval_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        query TEXT NOT NULL,
+        result_path TEXT NOT NULL,
+        result_score REAL NOT NULL,
+        chunk_id INTEGER,
+        retrieved_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_retrieval_path ON retrieval_log(result_path);
+      CREATE INDEX IF NOT EXISTS idx_retrieval_time ON retrieval_log(retrieved_at);
+    `);
+
+    // Auto-expire old retrieval logs (>90 days)
+    const cutoff = Date.now() - 90 * MS_PER_DAY;
+    db.prepare("DELETE FROM retrieval_log WHERE retrieved_at < ?").run(cutoff);
 
     this.initialized = true;
     this.logger.info("Memory index initialized", { dbPath });
@@ -235,7 +260,7 @@ export class MemoryIndex {
 
     const db = this.db as import("better-sqlite3").Database;
     const limit = options?.limit ?? 10;
-    const minScore = options?.minScore ?? 0.1;
+    const minScore = options?.minScore ?? 0.05;
     const results = new Map<number, { path: string; content: string; score: number; chunkIndex: number; updatedAt: number }>();
 
     try {
@@ -317,6 +342,17 @@ export class MemoryIndex {
       }
     }
 
+    // Retrieval-weighted boost: frequently retrieved memories get a small score bump
+    if (this.retrievalBoost > 0) {
+      for (const result of results.values()) {
+        const count = this.getRetrievalCount(result.path);
+        if (count > 0) {
+          const boost = Math.min(1 + Math.log(count + 1) * this.retrievalBoost, this.retrievalBoostCap);
+          result.score *= boost;
+        }
+      }
+    }
+
     const candidates = [...results.entries()]
       .filter(([, r]) => r.score >= minScore)
       .sort(([, a], [, b]) => b.score - a.score);
@@ -332,6 +368,68 @@ export class MemoryIndex {
   get(path: string): string | undefined {
     if (!existsSync(path)) return undefined;
     return readFileSync(path, "utf-8");
+  }
+
+  logRetrievals(query: string, results: Array<{ path: string; score: number }>): void {
+    if (!this.db) return;
+    try {
+      const db = this.db as import("better-sqlite3").Database;
+      const now = Date.now();
+      const stmt = db.prepare(
+        "INSERT INTO retrieval_log (query, result_path, result_score, retrieved_at) VALUES (?, ?, ?, ?)"
+      );
+      const insertAll = db.transaction(() => {
+        for (const r of results) {
+          stmt.run(query, r.path, r.score, now);
+        }
+      });
+      insertAll();
+    } catch (err) {
+      this.logger.debug("Retrieval logging failed", { error: String(err) });
+    }
+  }
+
+  getRetrievalStats(path: string): { count: number; lastRetrieved: number; avgScore: number } | null {
+    if (!this.db) return null;
+    const db = this.db as import("better-sqlite3").Database;
+    const row = db.prepare(
+      "SELECT COUNT(*) as count, MAX(retrieved_at) as lastRetrieved, AVG(result_score) as avgScore FROM retrieval_log WHERE result_path = ?"
+    ).get(path) as { count: number; lastRetrieved: number | null; avgScore: number | null } | undefined;
+    if (!row || row.count === 0) return null;
+    return { count: row.count, lastRetrieved: row.lastRetrieved ?? 0, avgScore: row.avgScore ?? 0 };
+  }
+
+  getNeverRetrieved(olderThanDays = 90): string[] {
+    if (!this.db) return [];
+    const db = this.db as import("better-sqlite3").Database;
+    const cutoff = Date.now() - olderThanDays * MS_PER_DAY;
+    const rows = db.prepare(`
+      SELECT DISTINCT c.path FROM chunks c
+      LEFT JOIN retrieval_log r ON c.path = r.result_path
+      WHERE r.id IS NULL AND c.updated_at < ?
+      GROUP BY c.path
+    `).all(cutoff) as Array<{ path: string }>;
+    return rows.map(r => r.path);
+  }
+
+  getMostRetrieved(limit = 20): Array<{ path: string; count: number; avgScore: number }> {
+    if (!this.db) return [];
+    const db = this.db as import("better-sqlite3").Database;
+    const rows = db.prepare(`
+      SELECT result_path as path, COUNT(*) as count, AVG(result_score) as avgScore
+      FROM retrieval_log
+      GROUP BY result_path
+      ORDER BY count DESC
+      LIMIT ?
+    `).all(limit) as Array<{ path: string; count: number; avgScore: number }>;
+    return rows;
+  }
+
+  getRetrievalCount(path: string): number {
+    if (!this.db) return 0;
+    const db = this.db as import("better-sqlite3").Database;
+    const row = db.prepare("SELECT COUNT(*) as c FROM retrieval_log WHERE result_path = ?").get(path) as { c: number };
+    return row.c;
   }
 
   async store(content: string, path: string): Promise<void> {
