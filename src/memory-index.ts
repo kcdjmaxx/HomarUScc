@@ -342,10 +342,16 @@ export class MemoryIndex {
       }
     }
 
-    // Retrieval-weighted boost: frequently retrieved memories get a small score bump
-    if (this.retrievalBoost > 0) {
+    // Retrieval-weighted boost: batch query for all result paths
+    if (this.retrievalBoost > 0 && results.size > 0) {
+      const paths = [...results.values()].map(r => r.path);
+      const placeholders = paths.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT result_path, COUNT(*) as c FROM retrieval_log WHERE result_path IN (${placeholders}) GROUP BY result_path`
+      ).all(...paths) as Array<{ result_path: string; c: number }>;
+      const countMap = new Map(rows.map(r => [r.result_path, r.c]));
       for (const result of results.values()) {
-        const count = this.getRetrievalCount(result.path);
+        const count = countMap.get(result.path) ?? 0;
         if (count > 0) {
           const boost = Math.min(1 + Math.log(count + 1) * this.retrievalBoost, this.retrievalBoostCap);
           result.score *= boost;
