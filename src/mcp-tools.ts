@@ -24,7 +24,8 @@ function extractSentences(content: string, count: number): string {
     const end = text.indexOf("---", 3);
     if (end !== -1) text = text.slice(end + 3);
   }
-  const lines = text.split("\n");
+  // Split on newlines and inline header markers (chunks may be flattened)
+  const lines = text.replace(/\s#{1,6}\s/g, "\n").split("\n");
   const proseLines: string[] = [];
   let firstHeader = "";
   for (const line of lines) {
