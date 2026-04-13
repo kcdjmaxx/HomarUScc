@@ -5,12 +5,59 @@ import type { TelegramChannelAdapter } from "./telegram-adapter.js";
 import type { DashboardAdapter } from "./dashboard-adapter.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { ObsidianCLI } from "./obsidian-cli.js";
 
 export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   handler: (params: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+}
+
+type DetailLevel = "index" | "summary" | "full";
+
+function extractSentences(content: string, count: number): string {
+  let text = content;
+  // Strip YAML frontmatter
+  if (text.startsWith("---")) {
+    const end = text.indexOf("---", 3);
+    if (end !== -1) text = text.slice(end + 3);
+  }
+  // Skip markdown headers and empty lines to find prose
+  const lines = text.split("\n");
+  const proseLines: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) continue;
+    if (trimmed.startsWith("---")) continue;
+    if (trimmed.startsWith("```")) break;
+    proseLines.push(trimmed);
+  }
+  const prose = proseLines.join(" ");
+  if (!prose) return content.slice(0, 80).trim();
+  // Split on sentence boundaries
+  const sentences = prose.match(/[^.!?]+[.!?]+/g);
+  if (sentences && sentences.length > 0) {
+    return sentences.slice(0, count).join(" ").trim();
+  }
+  // Fallback: first N words
+  const words = prose.split(/\s+/);
+  return words.slice(0, count * 15).join(" ");
+}
+
+function formatResult(r: { path: string; content: string; score: number }, i: number, detail: DetailLevel): string {
+  const header = `[${i + 1}] ${r.path} (score: ${r.score.toFixed(3)})`;
+  switch (detail) {
+    case "index":
+      return `${header}\n${extractSentences(r.content, 1)}`;
+    case "summary":
+      return `${header}\n${extractSentences(r.content, 3)}`;
+    case "full":
+    default:
+      return `${header}\n${r.content.slice(0, 500)}`;
+  }
 }
 
 export function createMcpTools(loop: HomarUScc): McpToolDef[] {
@@ -153,25 +200,133 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
   // --- memory_search ---
   tools.push({
     name: "memory_search",
-    description: "Search the memory index using hybrid vector + FTS search",
+    description: "Search the memory index using hybrid vector + FTS search. Returns compact results by default — use detail='full' for content or memory_get to fetch specific files.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
         limit: { type: "number", description: "Max results (default 10)" },
+        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (default, first sentence), 'summary' (2-3 sentences), 'full' (500 chars)" },
       },
       required: ["query"],
     },
     async handler(params) {
-      const { query, limit = 10 } = params as { query: string; limit?: number };
-      const results = await loop.getMemoryIndex().search(query, { limit });
-      if (results.length === 0) {
+      const { query, limit = 10, detail = "index" } = params as { query: string; limit?: number; detail?: DetailLevel };
+
+      // Unified search: fan out to memory, vault, and all docs domains in parallel
+      const searches: Promise<Array<{ path: string; content: string; score: number; source?: string }>>[] = [];
+
+      // Memory (primary)
+      searches.push(
+        loop.getMemoryIndex().search(query, { limit }).then(r => r.map(x => ({ ...x, source: "memory" })))
+      );
+
+      // Vault
+      const vaultIndex = loop.getVaultIndex?.();
+      if (vaultIndex) {
+        searches.push(
+          vaultIndex.search(query, { limit }).then((r: Array<{ path: string; content: string; score: number }>) => r.map(x => ({ path: x.path, content: x.content, score: x.score, source: "vault" })))
+            .catch(() => [])
+        );
+      }
+
+      // Docs (all domains)
+      const docsIndex = loop.getDocsIndex?.();
+      if (docsIndex) {
+        searches.push(
+          docsIndex.searchAll(query, limit).then(r => r.map(x => ({ path: `[${x.domain}] ${x.path}`, content: x.content, score: x.score, source: `docs:${x.domain}` })))
+            .catch(() => [])
+        );
+      }
+
+      const allResults = (await Promise.all(searches)).flat();
+
+      // Deduplicate by content prefix (first 200 chars) and sort by score
+      const seen = new Set<string>();
+      const deduped = allResults.filter(r => {
+        const key = r.content.slice(0, 200);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).sort((a, b) => b.score - a.score).slice(0, limit);
+
+      if (deduped.length === 0) {
         return { content: [{ type: "text", text: "No results found" }] };
       }
-      const formatted = results.map((r, i) =>
-        `[${i + 1}] ${r.path} (score: ${r.score.toFixed(3)})\n${r.content.slice(0, 500)}`
-      ).join("\n\n---\n\n");
+      const formatted = deduped.map((r, i) => formatResult(r, i, detail)).join("\n\n---\n\n");
       return { content: [{ type: "text", text: formatted }] };
+    },
+  });
+
+  // --- memory_get ---
+  tools.push({
+    name: "memory_get",
+    description: "Fetch full content of specific memory/vault files by path. Use after memory_search to drill down into results.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paths: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of file paths from search results (max 5)",
+        },
+      },
+      required: ["paths"],
+    },
+    async handler(params) {
+      const { paths } = params as { paths: string[] };
+      const capped = paths.slice(0, 5);
+      const results: string[] = [];
+
+      for (const p of capped) {
+        // Handle docs format: [domain] key
+        const docsMatch = p.match(/^\[(.+?)\]\s+(.+)$/);
+        if (docsMatch) {
+          const docsIndex = loop.getDocsIndex?.();
+          if (docsIndex) {
+            try {
+              const docs = await docsIndex.searchAll(docsMatch[2], 1);
+              const match = docs.find(d => d.domain === docsMatch[1]);
+              if (match) {
+                results.push(`## ${p}\n${match.content}`);
+                continue;
+              }
+            } catch { /* fall through */ }
+          }
+          results.push(`## ${p}\nNot found`);
+          continue;
+        }
+
+        // Try the path directly (absolute paths)
+        const content = loop.getMemoryIndex().get(p);
+        if (content) {
+          results.push(`## ${p}\n${content}`);
+          continue;
+        }
+
+        // Resolve relative paths against known base directories
+        const vaultPath = loop.getConfig().get<string>("memory.vault.vaultPath");
+        const candidates = [
+          p,
+          join(process.cwd(), p),
+          ...(vaultPath ? [join(vaultPath, p)] : []),
+          join(homedir(), ".homaruscc", p),
+        ];
+
+        let found = false;
+        for (const candidate of candidates) {
+          if (existsSync(candidate)) {
+            results.push(`## ${p}\n${readFileSync(candidate, "utf-8")}`);
+            found = true;
+            break;
+          }
+        }
+        if (found) continue;
+
+        results.push(`## ${p}\nNot found`);
+      }
+
+      return { content: [{ type: "text", text: results.join("\n\n---\n\n") }] };
     },
   });
 
@@ -189,6 +344,32 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
     async handler(params) {
       const { key, content } = params as { key: string; content: string };
+
+      // Memory validation: scan for injection/exfiltration patterns
+      const injectionPatterns = [
+        /ignore\s+(all\s+)?previous\s+instructions/i,
+        /you\s+are\s+now\s+a/i,
+        /disregard\s+(all\s+)?prior/i,
+        /override\s+system\s+prompt/i,
+        /pretend\s+you\s+are/i,
+        /new\s+instructions?\s*:/i,
+        /execute\s+the\s+following\s+command/i,
+        /curl\s+.*\|\s*sh/i,
+        /eval\s*\(/i,
+        /rm\s+-rf/i,
+        /export\s+(ANTHROPIC|OPENAI|API)_/i,
+        /cat\s+.*\.(env|key|pem|secret)/i,
+        /send\s+(this|the)\s+(to|via)\s+(email|http|webhook)/i,
+        /forward\s+(all|this)\s+(data|content|memory)/i,
+      ];
+
+      const flagged = injectionPatterns.filter(p => p.test(content));
+      if (flagged.length > 0) {
+        const patterns = flagged.map(p => p.source).join(", ");
+        console.error("[memory-guard] Memory store blocked: injection pattern detected", key, patterns);
+        return { content: [{ type: "text", text: `WARNING: Content flagged for potential injection patterns (${flagged.length} matches). Memory NOT stored. Review the content and retry if this is a false positive. Key: ${key}` }] };
+      }
+
       await loop.getMemoryIndex().store(content, key);
       return { content: [{ type: "text", text: `Stored and indexed: ${key}` }] };
     },
@@ -314,6 +495,91 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
       await docsIndex.clearDomain(domain);
       return { content: [{ type: "text", text: `Domain "${domain}" cleared.` }] };
+    },
+  });
+
+  // --- docs_get_clusters ---
+  tools.push({
+    name: "docs_get_clusters",
+    description: "Get topic clusters from a domain's raw chunks WITHOUT synthesizing articles. Returns cluster content for Claude Code to synthesize inline (no API key needed). Use with docs_ingest_text to store the synthesized articles.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name" },
+        clusterIndex: { type: "number", description: "Return only this cluster index (0-based). Omit to get a summary of all clusters." },
+        clusterThreshold: { type: "number", description: "Cosine similarity threshold for merging clusters (0.5-0.95, default 0.85). Higher = more granular clusters." },
+        maxClusters: { type: "number", description: "Max clusters to generate (default 20)" },
+      },
+      required: ["domain"],
+    },
+    async handler(params) {
+      const { domain, clusterIndex, clusterThreshold, maxClusters } = params as { domain: string; clusterIndex?: number; clusterThreshold?: number; maxClusters?: number };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      const clusters = await docsIndex.getClusters(domain, { clusterThreshold, maxClusters });
+      if (clusterIndex !== undefined) {
+        const cluster = clusters[clusterIndex];
+        if (!cluster) return { content: [{ type: "text", text: `Cluster ${clusterIndex} not found. ${clusters.length} clusters available.` }] };
+        return { content: [{ type: "text", text: `Cluster ${clusterIndex} (${cluster.chunkCount} chunks from ${cluster.sources.join(", ")}):\n\n${cluster.content}` }] };
+      }
+      const summary = clusters.map(c => `[${c.index}] ${c.chunkCount} chunks from ${c.sources.slice(0, 3).join(", ")}${c.sources.length > 3 ? ` (+${c.sources.length - 3} more)` : ""}`).join("\n");
+      return { content: [{ type: "text", text: `${clusters.length} clusters in "${domain}":\n${summary}` }] };
+    },
+  });
+
+  // --- docs_clear_compiled ---
+  tools.push({
+    name: "docs_clear_compiled",
+    description: "Clear only the compiled/synthesized articles from a domain, keeping raw chunks intact.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name" },
+      },
+      required: ["domain"],
+    },
+    async handler(params) {
+      const { domain } = params as { domain: string };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      const deleted = await docsIndex.clearCompiled(domain);
+      return { content: [{ type: "text", text: `Cleared ${deleted} compiled chunks from "${domain}".` }] };
+    },
+  });
+
+  // --- docs_compile ---
+  tools.push({
+    name: "docs_compile",
+    description: "Compile a domain's raw document chunks into synthesized concept articles with cross-references. Uses LLM to cluster related chunks by embedding similarity and generate markdown articles. Compiled articles are stored back in the domain's vector DB under compiled/ paths, improving retrieval quality for complex queries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Domain name to compile (e.g., 'sonic-pi', 'touchdesigner')" },
+        clusterThreshold: { type: "number", description: "Cosine similarity threshold for clustering chunks (0-1, default 0.35). Lower = larger clusters." },
+        maxClusters: { type: "number", description: "Maximum number of concept clusters to generate (default 20)" },
+      },
+      required: ["domain"],
+    },
+    async handler(params) {
+      const { domain, clusterThreshold, maxClusters } = params as {
+        domain: string; clusterThreshold?: number; maxClusters?: number;
+      };
+      const docsIndex = loop.getDocsIndex();
+      if (!docsIndex) return { content: [{ type: "text", text: "DocsIndex not initialized" }] };
+      try {
+        const result = await docsIndex.compile(domain, {
+          clusterThreshold,
+          maxClustersPerBatch: maxClusters,
+        });
+        return {
+          content: [{
+            type: "text",
+            text: `Domain "${domain}" compiled:\n- Clusters found: ${result.clustersFound}\n- Articles generated: ${result.articlesGenerated}\n- Chunks created: ${result.chunksCreated}`,
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: `Compile failed: ${err.message}` }] };
+      }
     },
   });
 
@@ -802,12 +1068,13 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
   // --- vault_search (V29) ---
   tools.push({
     name: "vault_search",
-    description: "Search the Obsidian vault index using hybrid vector + FTS search. Returns results with vault-relative paths.",
+    description: "Search the Obsidian vault index using hybrid vector + FTS search. Returns compact results by default — use detail='full' for content or memory_get to fetch specific files.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
         limit: { type: "number", description: "Max results (default 10)" },
+        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (default, first sentence), 'summary' (2-3 sentences), 'full' (500 chars)" },
       },
       required: ["query"],
     },
@@ -816,14 +1083,14 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       if (!vaultIndex) {
         return { content: [{ type: "text", text: "Vault index not configured. Add memory.vault section to config." }] };
       }
-      const { query, limit = 10 } = params as { query: string; limit?: number };
+      const { query, limit = 10, detail = "index" } = params as { query: string; limit?: number; detail?: DetailLevel };
       try {
         const results = await vaultIndex.search(query, { limit });
         if (results.length === 0) {
           return { content: [{ type: "text", text: "No vault results found" }] };
         }
         const formatted = results.map((r: { path: string; score: number; content: string }, i: number) =>
-          `[${i + 1}] ${r.path} (score: ${r.score.toFixed(3)})\n${r.content.slice(0, 500)}`
+          formatResult(r, i, detail)
         ).join("\n\n---\n\n");
         return { content: [{ type: "text", text: formatted }] };
       } catch (err) {
@@ -1332,6 +1599,248 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
           text: `Session extraction complete: processed ${result.processed} transcripts, stored ${result.insights} insights`,
         }],
       };
+    },
+  });
+
+  // --- Obsidian CLI tools ---
+  const obsidian = new ObsidianCLI();
+  const NOT_AVAILABLE = "Obsidian CLI is not available — Obsidian may not be running";
+
+  tools.push({
+    name: "obsidian_eval",
+    description: "Execute JavaScript against the Obsidian API (requires Obsidian running with CLI enabled)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "JavaScript code to evaluate against the Obsidian API" },
+      },
+      required: ["code"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const result = await obsidian.eval((params as { code: string }).code);
+        return { content: [{ type: "text", text: result || "(no output)" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_move",
+    description: "Move or rename a file in the vault, automatically updating all wikilinks",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "Source file path (relative to vault root)" },
+        to: { type: "string", description: "Destination file path (relative to vault root)" },
+      },
+      required: ["file", "to"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const { file, to } = params as { file: string; to: string };
+        await obsidian.move(file, to);
+        return { content: [{ type: "text", text: `Moved ${file} → ${to}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_tags_rename",
+    description: "Bulk rename a tag across all files in the vault",
+    inputSchema: {
+      type: "object",
+      properties: {
+        oldTag: { type: "string", description: "Tag to rename (e.g. 'project/old-name')" },
+        newTag: { type: "string", description: "New tag name (e.g. 'project/new-name')" },
+      },
+      required: ["oldTag", "newTag"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const { oldTag, newTag } = params as { oldTag: string; newTag: string };
+        await obsidian.tagsRename(oldTag, newTag);
+        return { content: [{ type: "text", text: `Renamed tag ${oldTag} → ${newTag}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_backlinks",
+    description: "Get all files that link to a given note",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "File path to find backlinks for (relative to vault root)" },
+      },
+      required: ["file"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const links = await obsidian.backlinks((params as { file: string }).file);
+        return { content: [{ type: "text", text: links.length ? links.join("\n") : "No backlinks found" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_orphans",
+    description: "Find notes with no backlinks (orphan notes)",
+    inputSchema: { type: "object", properties: {} },
+    async handler() {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const orphans = await obsidian.orphans();
+        return { content: [{ type: "text", text: orphans.length ? orphans.join("\n") : "No orphan notes found" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_search",
+    description: "Search the vault using Obsidian's built-in search",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query (Obsidian search syntax)" },
+      },
+      required: ["query"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const results = await obsidian.search((params as { query: string }).query);
+        return { content: [{ type: "text", text: results.length ? JSON.stringify(results, null, 2) : "No results" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_tags",
+    description: "List all tags used in the vault",
+    inputSchema: { type: "object", properties: {} },
+    async handler() {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const tags = await obsidian.tags();
+        return { content: [{ type: "text", text: tags.length ? tags.join("\n") : "No tags found" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_unresolved",
+    description: "Find broken/unresolved wikilinks in the vault",
+    inputSchema: { type: "object", properties: {} },
+    async handler() {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const unresolved = await obsidian.unresolved();
+        return { content: [{ type: "text", text: unresolved.length ? unresolved.join("\n") : "No unresolved links" }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_properties",
+    description: "Read frontmatter properties from a note",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "File path (relative to vault root)" },
+      },
+      required: ["file"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const props = await obsidian.properties((params as { file: string }).file);
+        return { content: [{ type: "text", text: JSON.stringify(props, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  tools.push({
+    name: "obsidian_property_set",
+    description: "Set a frontmatter property on a note",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "File path (relative to vault root)" },
+        key: { type: "string", description: "Property key to set" },
+        value: { type: "string", description: "Property value to set" },
+      },
+      required: ["file", "key", "value"],
+    },
+    async handler(params) {
+      if (!(await obsidian.isAvailable())) return { content: [{ type: "text", text: NOT_AVAILABLE }] };
+      try {
+        const { file, key, value } = params as { file: string; key: string; value: string };
+        await obsidian.propertySet(file, key, value);
+        return { content: [{ type: "text", text: `Set ${key} on ${file}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- PRD reports-pipeline-prd.md: Manual report processing tool ---
+  tools.push({
+    name: "process_report",
+    description: "Process a report JSON file through the deterministic pipeline: coerce schema, render HTML, send via Zoho email. Use after a report agent writes JSON to ~/.homaruscc/reports/YYYY-MM-DD/{type}.json",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          description: "Report type: daily-research, max-life, fric-frac, competitive-pulse, or daily-improvement",
+        },
+        date: {
+          type: "string",
+          description: "Report date in YYYY-MM-DD format",
+        },
+      },
+      required: ["type", "date"],
+    },
+    async handler(params) {
+      const { type, date } = params as { type: string; date: string };
+      try {
+        const { processReport } = await import("./report-pipeline.js");
+        const toolLogger = {
+          debug(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[DEBUG] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
+          info(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[INFO] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
+          warn(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[WARN] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
+          error(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[ERROR] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
+        };
+        const result = await processReport(type, date, toolLogger);
+        if (result.success) {
+          return { content: [{ type: "text", text: `Report ${type} for ${date} processed and sent successfully.` }] };
+        }
+        return { content: [{ type: "text", text: `Report processing failed: ${result.error}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
     },
   });
 
