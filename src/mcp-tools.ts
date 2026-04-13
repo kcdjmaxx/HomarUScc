@@ -18,7 +18,7 @@ export interface McpToolDef {
 type DetailLevel = "index" | "summary" | "full";
 
 function extractSentences(content: string, count: number): string {
-  const maxLen = count === 1 ? 80 : 200;
+  const maxLen = count === 1 ? 120 : 300;
   let text = content;
   if (text.startsWith("---")) {
     const end = text.indexOf("---", 3);
