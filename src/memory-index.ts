@@ -87,7 +87,7 @@ export class MemoryIndex {
     this.dreamBaseWeight = options?.dreamBaseWeight ?? 0.5;
     this.mmrEnabled = options?.mmrEnabled ?? true;
     this.mmrLambda = options?.mmrLambda ?? 0.7;
-    this.retrievalBoost = options?.retrievalBoost ?? 0.05;
+    this.retrievalBoost = options?.retrievalBoost ?? 0.15;
     this.retrievalBoostCap = options?.retrievalBoostCap ?? 1.5;
   }
 
