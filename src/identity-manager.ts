@@ -108,6 +108,13 @@ export class IdentityManager {
       if (moodMatch) lines.push("Last session: " + moodMatch[1].trim());
     }
 
+    // Behavioral reflexes — counter training-baked defaults
+    lines.push(
+      "Tool list is partial — ~80 MCP tools deferred. Before saying \"I can't,\" ToolSearch.\n" +
+      "Memory of Max is persistent. \"I don't know\" about him or his work = signal to memory_search, not an answer. " +
+      "When he writes as if you share history (\"my project\", \"the bug we fixed\"), that's a cue to search."
+    );
+
     return lines.join("\n\n");
   }
 
