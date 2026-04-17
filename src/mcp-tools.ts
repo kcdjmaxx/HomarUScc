@@ -262,8 +262,29 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       if (deduped.length === 0) {
         return { content: [{ type: "text", text: "No results found" }] };
       }
+      // Log retrievals (fire-and-forget)
+      loop.getMemoryIndex().logRetrievals(query, deduped.map(r => ({ path: r.path, score: r.score })));
+
+      // ACC Conflict Monitor: check for contradictions in search results
+      let conflictNote = "";
+      try {
+        const conflicts = loop.getConflictMonitor().checkConflicts(
+          deduped.map(r => ({ path: r.path, content: r.content, score: r.score, chunkIndex: 0 })),
+          { query, domain: undefined },
+        );
+        for (const conflict of conflicts) {
+          loop.getConflictMonitor().logConflict(conflict);
+        }
+        const serious = conflicts.filter(c => c.severity === "high" || c.severity === "critical");
+        if (serious.length > 0) {
+          conflictNote = `**⚠ Conflict detected:** ${serious.map(c => c.description).join("; ")}\n\n`;
+        }
+      } catch {
+        // Conflict detection is non-critical — don't break search
+      }
+
       const formatted = deduped.map((r, i) => formatResult(r, i, detail)).join("\n\n---\n\n");
-      return { content: [{ type: "text", text: formatted }] };
+      return { content: [{ type: "text", text: conflictNote + formatted }] };
     },
   });
 

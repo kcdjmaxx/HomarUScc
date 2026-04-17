@@ -19,14 +19,20 @@ fi
 BASE="http://127.0.0.1:${PORT}"
 TIMEOUT=120
 
-# Prevent duplicate listeners
-PIDFILE="/tmp/homaruscc-event-loop.pid"
+# Prevent duplicate listeners — scoped per-port so multiple services
+# (e.g. homaruscc on 3120 and ai-tutor on 3200) don't kill each other.
+PIDFILE="/tmp/homaruscc-event-loop-${PORT}.pid"
 if [[ -f "$PIDFILE" ]]; then
   OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
   if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "Killing previous event-loop (PID $OLD_PID)"
-    kill "$OLD_PID" 2>/dev/null || true
-    sleep 0.5
+    # Only kill if the PID actually belongs to another event-loop for THIS port.
+    # Check the process command to avoid killing unrelated processes that happen
+    # to have the same PID after a reuse.
+    if ps -p "$OLD_PID" -o command= 2>/dev/null | grep -q "bin/event-loop"; then
+      echo "Killing previous event-loop (PID $OLD_PID) for port ${PORT}"
+      kill "$OLD_PID" 2>/dev/null || true
+      sleep 0.5
+    fi
   fi
 fi
 echo $$ > "$PIDFILE"

@@ -20,6 +20,7 @@ import { AgentRegistry } from "./agent-registry.js";
 import { FactExtractor } from "./fact-extractor.js";
 import { SessionExtractor } from "./session-extractor.js";
 import { DocsIndex } from "./docs-index.js";
+import { ConflictMonitor } from "./conflict-monitor.js";
 // VaultIndex and UnifiedSearch live in local/vault-indexer/ (gitignored)
 // Loaded dynamically at runtime if vault config is present
 
@@ -48,6 +49,7 @@ export class HomarUScc {
   private factExtractor?: FactExtractor;
   private sessionExtractor?: SessionExtractor;
   private docsIndex?: DocsIndex;
+  private conflictMonitor: ConflictMonitor;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private vaultIndex?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,6 +71,7 @@ export class HomarUScc {
     this.eventQueue = new EventQueue(logger);
     this.toolRegistry = new ToolRegistry(logger);
     this.memoryIndex = new MemoryIndex(logger);
+    this.conflictMonitor = new ConflictMonitor(logger);
     this.channelManager = new ChannelManager(logger);
     this.identityManager = new IdentityManager(logger, "", "");
   }
@@ -135,6 +138,10 @@ export class HomarUScc {
 
   getSessionExtractor(): SessionExtractor | undefined {
     return this.sessionExtractor;
+  }
+
+  getConflictMonitor(): ConflictMonitor {
+    return this.conflictMonitor;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,6 +268,11 @@ export class HomarUScc {
       const dbPath = `${home}/.homaruscc/memory/index.sqlite`;
       try {
         await this.memoryIndex.initialize(dbPath);
+        // Initialize ConflictMonitor with the memory DB
+        const memDb = this.memoryIndex.getDb();
+        if (memDb) {
+          this.conflictMonitor.initialize(memDb);
+        }
         if (memoryConfig.extraPaths) {
           for (const p of memoryConfig.extraPaths) {
             await this.memoryIndex.indexDirectory(p);

@@ -46,6 +46,11 @@
       }
     ]
   },
+  "autoSkill": {
+    "enabled": true,
+    "minToolCalls": 5,
+    "recurrenceThreshold": 2
+  },
   "browser": {
     "enabled": false,
     "headless": true,

@@ -1,7 +1,7 @@
 // CRC: crc-CompactionManager.md | Seq: seq-compaction-flush.md
 // Auto-flush before context compaction — from HomarUS
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import type { Logger } from "./types.js";
@@ -159,6 +159,65 @@ export class CompactionManager {
     return lines.join("\n");
   }
 
+  /**
+   * Read the last N bytes of today's transcript file for post-compaction context.
+   * Returns the tail content or empty string if unavailable.
+   */
+  private readTranscriptTail(maxBytes = 50_000): string {
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      const transcriptPath = join(homedir(), ".homaruscc", "transcripts", `${date}.md`);
+      if (!existsSync(transcriptPath)) return "";
+
+      const stat = statSync(transcriptPath);
+      const size = stat.size;
+      if (size === 0) return "";
+
+      const readSize = Math.min(size, maxBytes);
+      const offset = size - readSize;
+      const buf = Buffer.alloc(readSize);
+      const fd = openSync(transcriptPath, "r");
+      readSync(fd, buf, 0, readSize, offset);
+      closeSync(fd);
+
+      let content = buf.toString("utf-8");
+      // If we started mid-file, skip to the first complete section header
+      if (offset > 0) {
+        const firstHeader = content.indexOf("\n## ");
+        if (firstHeader >= 0) {
+          content = content.slice(firstHeader + 1);
+        }
+      }
+      return content;
+    } catch (err) {
+      this.logger.warn("Failed to read transcript tail for post-compaction", { error: String(err) });
+      return "";
+    }
+  }
+
+  /**
+   * Read recent memory entries with their content for post-compaction context.
+   */
+  private readRecentMemoryContent(limit = 10): string[] {
+    try {
+      const recentPaths = this.loop.getMemoryIndex().getRecentPaths(limit);
+      const entries: string[] = [];
+      for (const p of recentPaths) {
+        try {
+          const content = readFileSync(p, "utf-8").trim();
+          // Truncate very long memories to keep injection reasonable
+          const truncated = content.length > 500 ? content.slice(0, 500) + "..." : content;
+          entries.push(`[${p}]\n${truncated}`);
+        } catch {
+          entries.push(`[${p}] (file not readable)`);
+        }
+      }
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
   handlePostCompact(): string {
     this.flushedThisCycle = false;
     this.compactedSinceLastWake = true;
@@ -171,13 +230,12 @@ export class CompactionManager {
       payload: { reset: true },
     });
 
-    this.logger.info("Post-compact context re-injection");
+    this.logger.info("Post-compact context re-injection (enriched)");
 
     const timerNames = this.loop.getTimerService().getAll().map((t) => `${t.name} (${t.type})`);
     const memoryStats = this.loop.getMemoryIndex().getStats();
-    const recentPaths = this.loop.getMemoryIndex().getRecentPaths(10);
     const watermark = this.loop.getDeliveryWatermark();
-    const recentEvents = this.loop.getEventHistory().slice(-5);
+    const recentEvents = this.loop.getEventHistory().slice(-25);
 
     const lines = [
       "Context was just compacted. Here is critical state:",
@@ -193,20 +251,26 @@ export class CompactionManager {
 
     lines.push(`Memory index: ${memoryStats.fileCount} files, ${memoryStats.chunkCount} chunks`);
 
-    if (recentPaths.length > 0) {
-      lines.push(`Recent memory keys: ${recentPaths.join(", ")}`);
-    }
-
     if (this.loop.getIdentityManager().getSoul()) {
       lines.push("Identity: soul.md and user.md are loaded");
     }
 
+    // Enriched: recent events with fuller payloads (25 events, 300 char payloads)
     if (recentEvents.length > 0) {
-      lines.push("", "Last 5 events (already handled — do NOT re-process):");
+      lines.push("", `Last ${recentEvents.length} events (already handled — do NOT re-process):`);
       for (const e of recentEvents) {
         const ts = new Date(e.timestamp).toISOString();
-        const summary = JSON.stringify(e.payload).slice(0, 80);
+        const summary = JSON.stringify(e.payload).slice(0, 300);
         lines.push(`  [${ts}] ${e.type}/${e.source}: ${summary}`);
+      }
+    }
+
+    // Enriched: recent memory content (not just paths)
+    const memoryEntries = this.readRecentMemoryContent(15);
+    if (memoryEntries.length > 0) {
+      lines.push("", "--- Recent Memory Entries (content) ---");
+      for (const entry of memoryEntries) {
+        lines.push(entry, "");
       }
     }
 
@@ -231,6 +295,19 @@ export class CompactionManager {
         "",
         "CRITICAL: The event loop was running before compaction. Restart it NOW:",
         '  bash "$PWD/bin/event-loop"',
+      );
+    }
+
+    // Enriched: transcript tail — last ~50KB of today's conversation for continuity
+    const transcriptTail = this.readTranscriptTail(50_000);
+    if (transcriptTail) {
+      lines.push(
+        "",
+        "--- Recent Transcript (raw conversation for continuity) ---",
+        "The following is the tail of today's transcript. Use it to understand the flow",
+        "of conversation and pick up where you left off naturally.",
+        "",
+        transcriptTail,
       );
     }
 

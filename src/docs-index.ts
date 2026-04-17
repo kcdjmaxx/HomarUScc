@@ -3,6 +3,7 @@
 // No temporal decay, no dream scoring — pure reference lookup
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
+import { createRequire } from "node:module";
 import type { Logger } from "./types.js";
 import type { EmbeddingProvider } from "./memory-index.js";
 
@@ -315,18 +316,43 @@ export class DocsIndex {
       result.push({ domain, stats: { fileCount, chunkCount } });
     }
 
-    // Include unloaded domains on disk
+    // Include unloaded domains on disk — peek at sqlite to get real counts
     if (existsSync(this.baseDir)) {
       const files = readdirSync(this.baseDir).filter((f) => f.endsWith(".sqlite"));
       for (const file of files) {
         const domain = file.replace(".sqlite", "");
         if (!this.domains.has(domain)) {
-          result.push({ domain, stats: { fileCount: 0, chunkCount: 0 } });
+          try {
+            const req = createRequire(import.meta.url);
+            const Database = req("better-sqlite3");
+            const dbPath = join(this.baseDir, file);
+            const peekDb = new Database(dbPath, { readonly: true });
+            const fileCount = (peekDb.prepare("SELECT COUNT(DISTINCT path) AS c FROM chunks").get() as { c: number }).c;
+            const chunkCount = (peekDb.prepare("SELECT COUNT(*) AS c FROM chunks").get() as { c: number }).c;
+            peekDb.close();
+            result.push({ domain, stats: { fileCount, chunkCount } });
+          } catch {
+            result.push({ domain, stats: { fileCount: 0, chunkCount: 0 } });
+          }
         }
       }
     }
 
     return result;
+  }
+
+  async clearCompiled(domain: string): Promise<number> {
+    const domainDB = this.domains.get(domain);
+    if (!domainDB) return 0;
+    const { db } = domainDB;
+    // Get IDs of compiled chunks for vector cleanup
+    const compiledIds = db.prepare("SELECT id FROM chunks WHERE path LIKE 'compiled/%'").all() as Array<{ id: number }>;
+    for (const { id } of compiledIds) {
+      try { db.prepare("DELETE FROM chunks_vec WHERE chunk_id = ?").run(id); } catch { /* ignore */ }
+    }
+    const result = db.prepare("DELETE FROM chunks WHERE path LIKE 'compiled/%'").run();
+    this.logger.info("Cleared compiled articles", { domain, deleted: result.changes });
+    return result.changes;
   }
 
   async clearDomain(domain: string): Promise<void> {
@@ -344,6 +370,317 @@ export class DocsIndex {
       try { unlinkSync(`${dbPath}-shm`); } catch { /* ignore */ }
     }
     this.logger.info("Docs domain cleared", { domain });
+  }
+
+  async compile(domain: string, options?: {
+    clusterThreshold?: number;
+    maxClustersPerBatch?: number;
+    model?: string;
+  }): Promise<{ clustersFound: number; articlesGenerated: number; chunksCreated: number }> {
+    const domainDB = this.domains.get(domain);
+    if (!domainDB) {
+      const dbPath = join(this.baseDir, `${domain}.sqlite`);
+      if (!existsSync(dbPath)) throw new Error(`Domain "${domain}" not found`);
+      await this.getOrCreateDomain(domain);
+      return this.compile(domain, options);
+    }
+
+    const { db } = domainDB;
+    const threshold = options?.clusterThreshold ?? 0.85;
+    const maxClusters = options?.maxClustersPerBatch ?? 20;
+    const model = options?.model ?? "claude-haiku-4-5-20251001";
+    const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set — needed for synthesis");
+
+    // 1. Get all chunks and their embeddings
+    const allChunks = db.prepare(
+      "SELECT c.id, c.path, c.chunk_index, c.content FROM chunks c WHERE c.path NOT LIKE '%compiled/%' ORDER BY c.path, c.chunk_index"
+    ).all() as Array<{ id: number; path: string; chunk_index: number; content: string }>;
+
+    if (allChunks.length === 0) throw new Error(`Domain "${domain}" has no chunks to compile`);
+
+    // Get embeddings from vector table
+    const embMap = new Map<number, Float32Array>();
+    if (this.embeddingProvider) {
+      const vecRows = db.prepare(
+        "SELECT chunk_id, embedding FROM chunks_vec"
+      ).all() as Array<{ chunk_id: number; embedding: Buffer }>;
+      for (const row of vecRows) {
+        embMap.set(row.chunk_id, new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4));
+      }
+    }
+
+    // 2. Cluster by source file first, then merge similar clusters
+    // Step A: Group chunks by source file
+    const fileGroups = new Map<string, typeof allChunks>();
+    for (const chunk of allChunks) {
+      const key = chunk.path;
+      if (!fileGroups.has(key)) fileGroups.set(key, []);
+      fileGroups.get(key)!.push(chunk);
+    }
+
+    // Step B: Compute centroid embedding for each file group
+    const groupEntries = [...fileGroups.entries()];
+    const centroids = new Map<string, Float32Array>();
+    for (const [path, chunks] of groupEntries) {
+      const embs = chunks.map(c => embMap.get(c.id)).filter(Boolean) as Float32Array[];
+      if (embs.length === 0) continue;
+      const dims = embs[0].length;
+      const centroid = new Float32Array(dims);
+      for (const emb of embs) {
+        for (let d = 0; d < dims; d++) centroid[d] += emb[d];
+      }
+      for (let d = 0; d < dims; d++) centroid[d] /= embs.length;
+      centroids.set(path, centroid);
+    }
+
+    // Step C: Merge file groups with similar centroids
+    const mergedClusters: Array<typeof allChunks> = [];
+    const mergedPaths = new Set<string>();
+
+    for (const [path, chunks] of groupEntries) {
+      if (mergedPaths.has(path)) continue;
+      if (mergedClusters.length >= maxClusters) break;
+
+      const cluster = [...chunks];
+      mergedPaths.add(path);
+      const seedCentroid = centroids.get(path);
+
+      if (seedCentroid) {
+        for (const [otherPath, otherChunks] of groupEntries) {
+          if (mergedPaths.has(otherPath)) continue;
+          const otherCentroid = centroids.get(otherPath);
+          if (!otherCentroid) continue;
+          const sim = this.cosineSimilarity(seedCentroid, otherCentroid);
+          if (sim >= threshold) {
+            cluster.push(...otherChunks);
+            mergedPaths.add(otherPath);
+          }
+        }
+      }
+
+      mergedClusters.push(cluster);
+    }
+
+    // Add remaining unmerged file groups
+    for (const [path, chunks] of groupEntries) {
+      if (!mergedPaths.has(path)) {
+        mergedClusters.push(chunks);
+        mergedPaths.add(path);
+      }
+    }
+
+    const largeClusters = mergedClusters;
+
+    this.logger.info("Docs compile: clusters formed", { domain, clusters: largeClusters.length, totalChunks: allChunks.length });
+
+    // 3. Synthesize concept articles via LLM
+    let totalArticlesCreated = 0;
+    let totalChunksCreated = 0;
+
+    // Get all concept titles first for cross-referencing
+    const clusterSummaries = largeClusters.map((cluster, i) => {
+      const sources = [...new Set(cluster.map(c => c.path))];
+      const preview = cluster.slice(0, 3).map(c => c.content.slice(0, 100)).join(" | ");
+      return { index: i, sources, preview, chunkCount: cluster.length };
+    });
+
+    for (let i = 0; i < largeClusters.length; i++) {
+      const cluster = largeClusters[i];
+      const combinedContent = cluster.map(c => c.content).join("\n\n---\n\n");
+      const sources = [...new Set(cluster.map(c => c.path))];
+
+      // Build cross-reference context
+      const otherTopics = clusterSummaries
+        .filter((_, j) => j !== i)
+        .map(s => s.preview.slice(0, 60))
+        .slice(0, 10)
+        .join(", ");
+
+      const prompt = `You are synthesizing documentation fragments into a concept article.
+
+DOMAIN: ${domain}
+SOURCE FILES: ${sources.join(", ")}
+
+FRAGMENTS (${cluster.length} chunks):
+${combinedContent.slice(0, 8000)}
+
+OTHER TOPICS IN THIS DOMAIN (for cross-referencing):
+${otherTopics}
+
+Write a concise markdown concept article that:
+1. Synthesizes the key information from these fragments into a coherent article
+2. Uses a clear title as the first line (# Title)
+3. Organizes information logically with subheadings
+4. Includes cross-references to related concepts where relevant (use markdown links like [concept name])
+5. Preserves technical accuracy — don't invent information not in the fragments
+6. Cites source files where appropriate
+
+Keep it focused and information-dense. No filler.`;
+
+      try {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 2048,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        if (!response.ok) {
+          this.logger.warn("Compile LLM call failed", { domain, cluster: i, status: response.status });
+          continue;
+        }
+
+        const data = await response.json() as {
+          content: Array<{ type: string; text?: string }>;
+        };
+        const articleText = data.content?.[0]?.text ?? "";
+        if (!articleText) continue;
+
+        // Extract title from the article for the key
+        const titleMatch = articleText.match(/^#\s+(.+)/m);
+        const title = titleMatch?.[1] ?? `concept-${i}`;
+        const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+        const key = `compiled/${slug}`;
+
+        // Store back into the domain via ingestText
+        const result = await this.ingestText(domain, key, articleText);
+        totalArticlesCreated++;
+        totalChunksCreated += result.chunksCreated;
+
+        this.logger.debug("Compiled article", { domain, title, chunks: result.chunksCreated });
+      } catch (err) {
+        this.logger.warn("Compile article failed", { domain, cluster: i, error: String(err) });
+      }
+    }
+
+    this.logger.info("Docs compile complete", { domain, articles: totalArticlesCreated, chunks: totalChunksCreated });
+    return { clustersFound: largeClusters.length, articlesGenerated: totalArticlesCreated, chunksCreated: totalChunksCreated };
+  }
+
+  async getClusters(domain: string, options?: {
+    clusterThreshold?: number;
+    maxClusters?: number;
+  }): Promise<Array<{ index: number; sources: string[]; chunkCount: number; content: string }>> {
+    const domainDB = this.domains.get(domain);
+    if (!domainDB) {
+      const dbPath = join(this.baseDir, `${domain}.sqlite`);
+      if (!existsSync(dbPath)) throw new Error(`Domain "${domain}" not found`);
+      await this.getOrCreateDomain(domain);
+      return this.getClusters(domain, options);
+    }
+
+    const { db } = domainDB;
+    const threshold = options?.clusterThreshold ?? 0.85;
+    const maxClusters = options?.maxClusters ?? 20;
+
+    const allChunks = db.prepare(
+      "SELECT c.id, c.path, c.chunk_index, c.content FROM chunks c WHERE c.path NOT LIKE '%compiled/%' ORDER BY c.path, c.chunk_index"
+    ).all() as Array<{ id: number; path: string; chunk_index: number; content: string }>;
+
+    if (allChunks.length === 0) return [];
+
+    const embMap = new Map<number, Float32Array>();
+    if (this.embeddingProvider) {
+      const vecRows = db.prepare("SELECT chunk_id, embedding FROM chunks_vec").all() as Array<{ chunk_id: number; embedding: Buffer }>;
+      for (const row of vecRows) {
+        embMap.set(row.chunk_id, new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4));
+      }
+    }
+
+    // Cluster by source file, then merge similar
+    const fileGroups = new Map<string, typeof allChunks>();
+    for (const chunk of allChunks) {
+      if (!fileGroups.has(chunk.path)) fileGroups.set(chunk.path, []);
+      fileGroups.get(chunk.path)!.push(chunk);
+    }
+
+    const groupEntries = [...fileGroups.entries()];
+    const centroids = new Map<string, Float32Array>();
+    for (const [path, chunks] of groupEntries) {
+      const embs = chunks.map(c => embMap.get(c.id)).filter(Boolean) as Float32Array[];
+      if (embs.length === 0) continue;
+      const dims = embs[0].length;
+      const centroid = new Float32Array(dims);
+      for (const emb of embs) { for (let d = 0; d < dims; d++) centroid[d] += emb[d]; }
+      for (let d = 0; d < dims; d++) centroid[d] /= embs.length;
+      centroids.set(path, centroid);
+    }
+
+    const clusters: Array<typeof allChunks> = [];
+    const mergedPaths = new Set<string>();
+    for (const [path, chunks] of groupEntries) {
+      if (mergedPaths.has(path) || clusters.length >= maxClusters) continue;
+      const cluster = [...chunks];
+      mergedPaths.add(path);
+      const seedCentroid = centroids.get(path);
+      if (seedCentroid) {
+        for (const [otherPath, otherChunks] of groupEntries) {
+          if (mergedPaths.has(otherPath)) continue;
+          const otherCentroid = centroids.get(otherPath);
+          if (!otherCentroid) continue;
+          if (this.cosineSimilarity(seedCentroid, otherCentroid) >= threshold) {
+            cluster.push(...otherChunks);
+            mergedPaths.add(otherPath);
+          }
+        }
+      }
+      clusters.push(cluster);
+    }
+    // Add remaining unmerged paths, but respect maxClusters cap
+    for (const [path, chunks] of groupEntries) {
+      if (!mergedPaths.has(path)) {
+        if (clusters.length < maxClusters) {
+          clusters.push(chunks);
+        } else {
+          // Merge into the most similar existing cluster
+          const orphanCentroid = centroids.get(path);
+          if (orphanCentroid) {
+            let bestIdx = clusters.length - 1;
+            let bestSim = -1;
+            for (let ci = 0; ci < clusters.length; ci++) {
+              const clusterPaths = [...new Set(clusters[ci].map(c => c.path))];
+              for (const cp of clusterPaths) {
+                const cc = centroids.get(cp);
+                if (cc) {
+                  const sim = this.cosineSimilarity(orphanCentroid, cc);
+                  if (sim > bestSim) { bestSim = sim; bestIdx = ci; }
+                }
+              }
+            }
+            clusters[bestIdx].push(...chunks);
+          } else {
+            clusters[clusters.length - 1].push(...chunks);
+          }
+        }
+        mergedPaths.add(path);
+      }
+    }
+
+    return clusters.map((cluster, i) => ({
+      index: i,
+      sources: [...new Set(cluster.map(c => c.path))],
+      chunkCount: cluster.length,
+      content: cluster.map(c => c.content).join("\n\n---\n\n").slice(0, 8000),
+    }));
+  }
+
+  private cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    let dot = 0, magA = 0, magB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      magA += a[i] * a[i];
+      magB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(magA) * Math.sqrt(magB);
+    return denom > 0 ? dot / denom : 0;
   }
 
   close(): void {

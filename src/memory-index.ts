@@ -95,6 +95,10 @@ export class MemoryIndex {
     this.embeddingProvider = provider;
   }
 
+  getDb(): import("better-sqlite3").Database | null {
+    return this.db as import("better-sqlite3").Database | null;
+  }
+
   // CRC: crc-MemoryIndex.md | R86
   setDecayConfig(config: NonNullable<MemoryConfig["decay"]>): void {
     if (config.enabled !== undefined) this.decayEnabled = config.enabled;
@@ -187,6 +191,37 @@ export class MemoryIndex {
       );
       CREATE INDEX IF NOT EXISTS idx_retrieval_path ON retrieval_log(result_path);
       CREATE INDEX IF NOT EXISTS idx_retrieval_time ON retrieval_log(retrieved_at);
+    `);
+
+    // ACC Conflict Monitor table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS conflict_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        domain TEXT,
+        emotional_weight REAL DEFAULT 0,
+        cognitive_weight REAL DEFAULT 0,
+        description TEXT NOT NULL,
+        resolution TEXT,
+        resolution_source TEXT,
+        resolved_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_conflict_domain ON conflict_log(domain);
+      CREATE INDEX IF NOT EXISTS idx_conflict_severity ON conflict_log(severity);
+      CREATE INDEX IF NOT EXISTS idx_conflict_resolved ON conflict_log(resolved_at);
+    `);
+
+    // ACC recall tracking — conflicts the monitor missed but the user caught
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS missed_conflict_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain TEXT,
+        description TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'user',
+        created_at INTEGER NOT NULL
+      );
     `);
 
     // Auto-expire old retrieval logs (>90 days)

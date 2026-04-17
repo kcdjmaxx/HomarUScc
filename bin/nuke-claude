@@ -23,28 +23,47 @@ report() {
 
 echo "[nuke] Starting nuclear restart..."
 
-# Phase 1: Kill ALL tmux sessions with claude in them
+# Ignore TERM/HUP/INT so we survive our own kill commands
+# (script name contains "claude" so pkill/pgrep match us)
+trap '' TERM HUP INT
+MY_PID=$$
+
+# Phase 1: Kill ALL tmux sessions
 for session in $(tmux list-sessions -F '#{session_name}' 2>/dev/null || true); do
   echo "[nuke] Killing tmux session: $session"
   tmux kill-session -t "$session" 2>/dev/null || true
 done
 sleep 1
 
-# Phase 2: Kill ALL claude processes (any invocation)
-echo "[nuke] Killing all claude processes..."
-pkill -f "claude" 2>/dev/null || true
+# Phase 2: Kill ALL claude processes (exclude ourselves)
+echo "[nuke] Killing all claude processes (excluding PID $MY_PID)..."
+for pid in $(pgrep -f "claude" 2>/dev/null || true); do
+  [ "$pid" = "$MY_PID" ] && continue
+  echo "[nuke] Killing PID $pid"
+  kill "$pid" 2>/dev/null || true
+done
 sleep 2
 
 # Phase 3: Kill any event-loop curl processes
 pkill -f "homaruscc-wait-response" 2>/dev/null || true
 
-# Phase 4: Verify everything is dead
-REMAINING=$(pgrep -f "claude" 2>/dev/null | wc -l | tr -d ' ')
+# Phase 4: Verify everything is dead (exclude ourselves)
+REMAINING=0
+for pid in $(pgrep -f "claude" 2>/dev/null || true); do
+  [ "$pid" = "$MY_PID" ] && continue
+  REMAINING=$((REMAINING + 1))
+done
 if [ "$REMAINING" -gt 0 ]; then
   echo "[nuke] $REMAINING claude processes still alive — force killing"
-  pkill -9 -f "claude" 2>/dev/null || true
+  for pid in $(pgrep -f "claude" 2>/dev/null || true); do
+    [ "$pid" = "$MY_PID" ] && continue
+    kill -9 "$pid" 2>/dev/null || true
+  done
   sleep 1
 fi
+
+# Restore signal handling
+trap - TERM HUP INT
 
 # Phase 5: Start fresh tmux session
 echo "[nuke] Starting fresh tmux session..."
