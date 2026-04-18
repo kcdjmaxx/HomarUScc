@@ -626,10 +626,47 @@ export class MemoryIndex {
   }
 
   private chunkContent(content: string, path: string): Chunk[] {
+    // For markdown files with H2 section structure, split on H2 boundaries first
+    // so each section's facts retrieve independently (fixes MEMORY.md-style files
+    // where narrow queries were missing facts because word-slice chunks straddled
+    // unrelated sections).
+    const hasH2Sections = /^## /m.test(content);
+    if (hasH2Sections) {
+      return this.chunkBySection(content, path);
+    }
+    return this.chunkByWords(content, path, 0);
+  }
+
+  private chunkBySection(content: string, path: string): Chunk[] {
+    // Split on H2 boundaries. Preamble (before first ##) stays as section 0.
+    // Each ## header line is kept with its section so retrievability doesn't
+    // lose the semantic anchor.
+    const parts = content.split(/^(?=## )/m);
+    const chunks: Chunk[] = [];
+    let nextIndex = 0;
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed.length === 0) continue;
+      const wordCount = trimmed.split(/\s+/).length;
+      if (wordCount <= this.chunkSize) {
+        chunks.push({ path, index: nextIndex++, content: trimmed });
+      } else {
+        // Large section — fall back to word-slice within the section.
+        // Sub-chunks share the same section header context by prefixing
+        // the first H2 line when present.
+        const subChunks = this.chunkByWords(trimmed, path, nextIndex);
+        chunks.push(...subChunks);
+        nextIndex += subChunks.length;
+      }
+    }
+    return chunks.length > 0 ? chunks : this.chunkByWords(content, path, 0);
+  }
+
+  private chunkByWords(content: string, path: string, startIndex: number): Chunk[] {
     const words = content.split(/\s+/);
     const chunks: Chunk[] = [];
     let i = 0;
-    let index = 0;
+    let index = startIndex;
 
     while (i < words.length) {
       const end = Math.min(i + this.chunkSize, words.length);
@@ -651,6 +688,16 @@ export class MemoryIndex {
         files.push(...this.findMarkdownFiles(fullPath));
       } else if (entry.isFile() && extname(entry.name) === ".md") {
         files.push(fullPath);
+      } else if (entry.isSymbolicLink() && extname(entry.name) === ".md") {
+        // Follow symlinks pointing to .md files so users can mirror memory
+        // files from locations the auto-index can't reach (e.g. Claude Code's
+        // auto-memory dir with hyphen-mangled path).
+        try {
+          const stat = require("node:fs").statSync(fullPath);
+          if (stat.isFile()) files.push(fullPath);
+        } catch {
+          // broken symlink — skip
+        }
       }
     }
     return files;
