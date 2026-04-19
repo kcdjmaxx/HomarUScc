@@ -53,6 +53,7 @@ export class DashboardServer {
   private appRegistry: AppRegistry;
   private appDataStore: AppDataStore;
   private pluginLoader: PluginLoader;
+  private extensionRouteMounts: Array<(app: express.Application) => void> = [];
   private lastWaitPoll = 0;
   private restartChatId: string | null = null;
 
@@ -61,7 +62,10 @@ export class DashboardServer {
     this.port = port;
     this.loop = loop;
     this.dashboardAdapter = dashboardAdapter;
-    this.mcpTools = createMcpTools(loop);
+    // mcpTools is populated in start() so personal extensions have a chance to
+    // register additional tools (via loop.registerExtraMcpTool) before
+    // createMcpTools is invoked.
+    this.mcpTools = [];
     this.mcpResources = createMcpResources(loop);
     this.compactionManager = new CompactionManager(loop, logger);
 
@@ -92,12 +96,36 @@ export class DashboardServer {
     this.wireAdapter();
   }
 
+  /**
+   * Register a callback that mounts extra Express routes. Called by optional
+   * extensions (personal-extensions.ts etc.) during backend startup, before
+   * DashboardServer.start() is awaited. Mounted after core + plugin routes
+   * but before the catch-all static file handler.
+   */
+  registerExtensionRoutes(mount: (app: express.Application) => void): void {
+    this.extensionRouteMounts.push(mount);
+  }
+
   async start(): Promise<void> {
     // Load plugins (dynamic import requires await)
     await this.pluginLoader.loadAll();
     this.pluginLoader.mountRoutes(this.app);
-    // Merge plugin tools into MCP tools
+    // Build the MCP tool list. createMcpTools reads loop.getExtraMcpTools()
+    // so any tools registered by personal extensions earlier in startup are
+    // included.
+    this.mcpTools.push(...createMcpTools(this.loop));
     this.mcpTools.push(...this.pluginLoader.getAllTools());
+
+    // Extension routes — personal/gitignored modules register Express handlers
+    // via DashboardServer.registerExtensionRoutes (see HomarUScc for the
+    // extension hook). Mounted AFTER plugins but BEFORE the catch-all.
+    for (const mount of this.extensionRouteMounts) {
+      try {
+        mount(this.app);
+      } catch (err) {
+        this.logger.warn("Extension route mount failed", { error: String(err) });
+      }
+    }
 
     // Serve built dashboard AFTER plugin routes (catch-all must be last)
     const distPath = resolve(import.meta.dirname ?? __dirname, "../dashboard/dist");
@@ -256,6 +284,38 @@ export class DashboardServer {
       res.json(this.loop.getMemoryIndex().getStats());
     });
 
+    // ACC Conflict Monitor health endpoint — exposes conflict_log aggregates +
+    // the 10 most recent conflicts for dashboard observability.
+    this.app.get("/api/conflict-health", (_req, res) => {
+      const monitor = this.loop.getConflictMonitor();
+      const stats = monitor.getConflictStats();
+      const recentConflicts = monitor.getRecentConflicts(10);
+      res.json({ ...stats, recentConflicts });
+    });
+
+    // Memory utilization — how much of what we've indexed is actually being
+    // retrieved. Feeds the dashboard's "never retrieved" + top-K panels.
+    this.app.get("/api/memory-health", (_req, res) => {
+      try {
+        const memIndex = this.loop.getMemoryIndex();
+        const mostRetrieved = memIndex.getMostRetrieved(10);
+        const neverRetrieved = memIndex.getNeverRetrieved(90);
+        const stats = memIndex.getStats();
+        const totalFiles = stats.fileCount;
+        const utilizationRate = totalFiles > 0 ? 1 - neverRetrieved.length / totalFiles : 0;
+        res.json({
+          totalFiles,
+          retrievedFiles: totalFiles - neverRetrieved.length,
+          neverRetrievedCount: neverRetrieved.length,
+          utilizationRate,
+          topRetrieved: mostRetrieved,
+          neverRetrievedSample: neverRetrieved.slice(0, 20),
+        });
+      } catch (err) {
+        res.status(500).json({ error: String(err) });
+      }
+    });
+
     // V32, V33: Unified search endpoint — merges vault + memory results
     this.app.get("/api/search/unified", async (req, res) => {
       const q = req.query.q as string;
@@ -329,6 +389,15 @@ export class DashboardServer {
             cursor: this.loop.getDeliveryWatermark(),
             compaction: { count: compactionStats.count, loopFailures: compactionStats.loopFailures },
             ...(shouldRestart && { shouldRestart: true }),
+            // Echo current wall time in Max's TZ so wake-ups can sanity-check
+            // their date without another tool call. Mitigates the long-running
+            // session date-drift problem that caused BUG-20260418-4-style
+            // harms (wrong "tomorrow" in outbound mail).
+            currentTime: new Date().toLocaleString("en-US", {
+              timeZone: "America/Chicago",
+              weekday: "short", month: "short", day: "numeric",
+              hour: "numeric", minute: "2-digit", hour12: true,
+            }),
           });
         }
       } catch {

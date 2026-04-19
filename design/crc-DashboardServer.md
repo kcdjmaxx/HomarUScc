@@ -7,10 +7,12 @@
 - wss: WebSocket server
 - clients: connected WebSocket clients
 - port: configured port (default 3120)
+- mcpTools: MCP tool list — populated in start() AFTER personal extensions have had a chance to register (so loop.getExtraMcpTools() captures their contributions)
 - compactionManager: CompactionManager
 - spacesManager: SpacesManager
 - appRegistry: AppRegistry -- scans and provides app manifests
 - appDataStore: AppDataStore -- read/write/describe for app data.json files
+- extensionRouteMounts: callbacks registered via registerExtensionRoutes(); run in start() between plugin routes and catch-all static serving
 - lastWaitPoll: timestamp of last /api/wait call (R222)
 - restartChatId: chat ID for restart result callback (R221)
 
@@ -19,7 +21,9 @@
 - stop: close server, SpacesManager, and all WebSocket connections
 - setupRoutes: mount API endpoints:
   - /api/status, /api/events, /api/timers, /api/memory/stats, /api/identity/*
-  - /api/wait (with digest vs full identity delivery R151, R152)
+  - /api/wait (with digest vs full identity delivery R151, R152; response includes `currentTime` in Max's timezone to mitigate long-session date drift)
+  - /api/conflict-health — ACC Conflict Monitor aggregates + 10 most recent
+  - /api/memory-health — retrieval utilization, never-retrieved files, top-K
   - /api/config/skills (R408)
   - /api/checkpoint (R126, R127, R130)
   - /api/agents and /api/agents/:id/complete (R137-R140, R154-R155)
@@ -30,6 +34,7 @@
   - /api/spaces/* (R310-R318)
   - /api/docs (document viewer)
   - /api/tool-call, /api/tool-list, /api/resource, /api/resource-list
+- registerExtensionRoutes: public method letting optional extensions mount additional Express routes (runs during start() after plugin routes, before the static-file catch-all). Used by personal-extensions for gitignored pipelines (hiring, sensor bridge) so fresh clones of the public repo run without them.
 - handleWebSocket: process inbound WS messages (chat, search, status, events)
 - broadcast: send message to all connected WS clients
 - handlePortConflict: kill stale process on EADDRINUSE

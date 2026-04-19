@@ -49,6 +49,28 @@ async function main(): Promise<void> {
       loop,
       dashboardAdapter,
     );
+
+    // Load optional personal extensions BEFORE starting the dashboard — they
+    // can call loop.registerExtraMcpTool(...) and dashboardServer.
+    // registerExtensionRoutes(...) which both need to run before start() so
+    // their contributions land in the initial tool list and route table.
+    try {
+      const extPath = "./personal-extensions.js";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mod: any = await import(extPath);
+      if (typeof mod?.register === "function") {
+        await mod.register(loop, logger, dashboardServer);
+        logger.info("Personal extensions registered");
+      }
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes("Cannot find module") || msg.includes("ERR_MODULE_NOT_FOUND")) {
+        logger.debug("No personal extensions present (expected on fresh clones)");
+      } else {
+        logger.warn("Personal extensions failed to load", { error: msg });
+      }
+    }
+
     await dashboardServer.start();
 
     // Forward event loop notifications to dashboard WebSocket clients
@@ -85,28 +107,6 @@ async function main(): Promise<void> {
     });
     telegramAdapter.setCommandHandler(commandHandler);
     logger.info("Telegram command handler registered");
-  }
-
-  // Optional personal extensions — the file is gitignored, so a fresh clone
-  // simply runs without them. Any module that default-exports or named-exports
-  // `register(loop, logger)` will be loaded here.
-  try {
-    // String-indirection keeps the TypeScript module graph clean on clones
-    // where src/personal-extensions.ts doesn't exist.
-    const extPath = "./personal-extensions.js";
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mod: any = await import(extPath);
-    if (typeof mod?.register === "function") {
-      await mod.register(loop, logger);
-      logger.info("Personal extensions registered");
-    }
-  } catch (err) {
-    const msg = String(err);
-    if (msg.includes("Cannot find module") || msg.includes("ERR_MODULE_NOT_FOUND")) {
-      logger.debug("No personal extensions present (expected on fresh clones)");
-    } else {
-      logger.warn("Personal extensions failed to load", { error: msg });
-    }
   }
 
   logger.info("HomarUScc backend running (no MCP stdio)");
