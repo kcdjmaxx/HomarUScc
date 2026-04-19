@@ -128,6 +128,19 @@ export interface ConfigData {
   spaces?: SpacesConfig;
   homeAssistant?: HomeAssistantConfig;
   factExtractor?: FactExtractorConfig | false;
+  acc?: AccConfig;
+}
+
+export interface AccConfig {
+  alerts?: {
+    enabled?: boolean;
+    channel?: string;                        // channel name, default "telegram"
+    chatId?: string | number;                // target; defaults to first allowedChatIds entry
+    severityThreshold?: "high" | "critical";
+    burstThreshold?: number;
+    burstWindowMs?: number;
+    rateLimitMs?: number;
+  };
 }
 
 export interface FactExtractorConfig {

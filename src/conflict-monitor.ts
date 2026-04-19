@@ -31,6 +31,32 @@ export interface EventContext {
   query?: string;
 }
 
+export interface FastLoopAlert {
+  conflictId: number;
+  gate: "severity" | "burst";
+  conflict: Conflict;
+  burstCount?: number;
+  burstWindowMs?: number;
+}
+
+export type FastLoopNotifier = (alert: FastLoopAlert) => void | Promise<void>;
+
+export interface AlertConfig {
+  enabled: boolean;
+  severityThreshold: "high" | "critical";
+  burstThreshold: number;
+  burstWindowMs: number;
+  rateLimitMs: number;
+}
+
+const DEFAULT_ALERT_CONFIG: AlertConfig = {
+  enabled: true,
+  severityThreshold: "high",
+  burstThreshold: 3,
+  burstWindowMs: 10 * 60 * 1000, // 10 minutes
+  rateLimitMs: 60 * 60 * 1000,   // 1 hour per (domain, gate)
+};
+
 interface ConflictRow {
   id: number;
   type: string;
@@ -54,6 +80,9 @@ const MS_PER_DAY = 86_400_000;
 export class ConflictMonitor {
   private db: import("better-sqlite3").Database | null = null;
   private logger: Logger;
+  private fastLoopNotifier: FastLoopNotifier | null = null;
+  private alertConfig: AlertConfig = { ...DEFAULT_ALERT_CONFIG };
+  private lastAlertAt: Map<string, number> = new Map();
 
   constructor(logger: Logger) {
     this.logger = logger;
@@ -64,6 +93,18 @@ export class ConflictMonitor {
     this.logger.info("ConflictMonitor initialized");
     // Run decay on initialization
     this.decayOldConflicts();
+  }
+
+  setFastLoopNotifier(notifier: FastLoopNotifier | null): void {
+    this.fastLoopNotifier = notifier;
+  }
+
+  setAlertConfig(config: Partial<AlertConfig>): void {
+    this.alertConfig = { ...DEFAULT_ALERT_CONFIG, ...config };
+  }
+
+  getAlertConfig(): AlertConfig {
+    return { ...this.alertConfig };
   }
 
   /**
@@ -178,7 +219,64 @@ export class ConflictMonitor {
       severity: conflict.severity,
       domain: conflict.domain,
     });
-    return Number(result.lastInsertRowid);
+    const id = Number(result.lastInsertRowid);
+    this.checkFastLoopAlert(conflict, id);
+    return id;
+  }
+
+  /**
+   * Step D (ACC fast-loop alerting). After a conflict is logged, decide whether
+   * to push an alert to the external notifier. Two gates:
+   *   severity — high/critical conflicts alert on the first occurrence
+   *   burst    — ≥N conflicts in the same domain within a short window
+   * Rate-limited per (domain, gate) so a persistent signal can't spam.
+   */
+  private checkFastLoopAlert(conflict: Conflict, conflictId: number): void {
+    if (!this.alertConfig.enabled || !this.fastLoopNotifier) return;
+
+    const now = Date.now();
+    const severityLevel = SEVERITY_LEVELS[conflict.severity] ?? 0;
+    const thresholdLevel = SEVERITY_LEVELS[this.alertConfig.severityThreshold] ?? 2;
+
+    if (severityLevel >= thresholdLevel) {
+      this.dispatchAlert({ conflictId, gate: "severity", conflict }, now);
+      return; // A severity alert covers the burst signal for this event
+    }
+
+    // Burst gate: count conflicts in same domain within the burst window
+    if (!this.db) return;
+    const windowStart = now - this.alertConfig.burstWindowMs;
+    const burstCount = (this.db.prepare(
+      "SELECT COUNT(*) as cnt FROM conflict_log WHERE domain = ? AND created_at >= ?",
+    ).get(conflict.domain, windowStart) as { cnt: number }).cnt;
+
+    if (burstCount >= this.alertConfig.burstThreshold) {
+      this.dispatchAlert(
+        { conflictId, gate: "burst", conflict, burstCount, burstWindowMs: this.alertConfig.burstWindowMs },
+        now,
+      );
+    }
+  }
+
+  private dispatchAlert(alert: FastLoopAlert, now: number): void {
+    if (!this.fastLoopNotifier) return;
+    const key = `${alert.gate}:${alert.conflict.domain}`;
+    const last = this.lastAlertAt.get(key) ?? 0;
+    if (now - last < this.alertConfig.rateLimitMs) {
+      this.logger.debug("Fast-loop alert suppressed by rate limit", { key, sinceLastMs: now - last });
+      return;
+    }
+    this.lastAlertAt.set(key, now);
+    try {
+      const result = this.fastLoopNotifier(alert);
+      if (result && typeof (result as Promise<void>).catch === "function") {
+        (result as Promise<void>).catch(err => {
+          this.logger.warn("Fast-loop notifier rejected", { error: String(err) });
+        });
+      }
+    } catch (err) {
+      this.logger.warn("Fast-loop notifier threw", { error: String(err) });
+    }
   }
 
   resolveConflict(resolution: ConflictResolution): void {

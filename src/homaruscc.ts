@@ -272,6 +272,7 @@ export class HomarUScc {
         const memDb = this.memoryIndex.getDb();
         if (memDb) {
           this.conflictMonitor.initialize(memDb);
+          this.wireFastLoopAlerts(configData);
         }
         if (memoryConfig.extraPaths) {
           for (const p of memoryConfig.extraPaths) {
@@ -531,6 +532,56 @@ export class HomarUScc {
       clearInterval(this.processInterval);
       this.processInterval = null;
     }
+  }
+
+  /**
+   * Wire ACC fast-loop alerts (Step D). Conflicts that breach the severity or
+   * burst gate get pushed out as a Telegram message to the configured chat.
+   * Default target: first entry in `channels.telegram.allowedChatIds`.
+   * Config lives under `acc.alerts` — see types.ts AccConfig.
+   */
+  private wireFastLoopAlerts(configData: ConfigData): void {
+    const alerts = configData.acc?.alerts ?? {};
+    if (alerts.enabled === false) {
+      this.logger.info("ACC fast-loop alerts disabled by config");
+      return;
+    }
+
+    this.conflictMonitor.setAlertConfig({
+      enabled: alerts.enabled ?? true,
+      severityThreshold: alerts.severityThreshold ?? "high",
+      burstThreshold: alerts.burstThreshold ?? 3,
+      burstWindowMs: alerts.burstWindowMs ?? 10 * 60 * 1000,
+      rateLimitMs: alerts.rateLimitMs ?? 60 * 60 * 1000,
+    });
+
+    const channelName = alerts.channel ?? "telegram";
+    const tgConfig = configData.channels?.[channelName] as { allowedChatIds?: Array<string | number> } | undefined;
+    const chatId = alerts.chatId ?? tgConfig?.allowedChatIds?.[0];
+    if (chatId === undefined || chatId === null) {
+      this.logger.warn("ACC fast-loop alerts: no chatId resolvable — leaving notifier unset");
+      return;
+    }
+
+    this.conflictMonitor.setFastLoopNotifier(async (alert) => {
+      const { gate, conflict, burstCount, burstWindowMs } = alert;
+      const header = gate === "severity"
+        ? `ACC alert (${conflict.severity}/${conflict.type})`
+        : `ACC burst (${burstCount} in ${Math.round((burstWindowMs ?? 0) / 60000)}m)`;
+      const body = `${header}\nDomain: ${conflict.domain}\n${conflict.description}`;
+      try {
+        await this.channelManager.send(channelName, String(chatId), { text: body });
+      } catch (err) {
+        this.logger.warn("Fast-loop alert send failed", { error: String(err), channel: channelName });
+      }
+    });
+
+    this.logger.info("ACC fast-loop alerts wired", {
+      channel: channelName,
+      chatId: String(chatId),
+      severityThreshold: this.conflictMonitor.getAlertConfig().severityThreshold,
+      burstThreshold: this.conflictMonitor.getAlertConfig().burstThreshold,
+    });
   }
 
   private registerDefaultHandlers(): void {
