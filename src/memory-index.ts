@@ -53,6 +53,11 @@ export class MemoryIndex {
   private mmrLambda: number;
   private retrievalBoost: number;
   private retrievalBoostCap: number;
+  // Per-domain retrieval boosts: map from path substring to multiplicative
+  // boost applied before MMR re-ranking. Lets high-value domains (identity,
+  // user preferences, CRM) surface even when cold (few retrieval log hits).
+  // Supplements the use-dependent retrievalBoost rather than replacing it.
+  private domainBoosts: Array<{ pattern: string; boost: number }> = [];
   private indexedPaths: string[] = [];
   private watcher: FSWatcher | null = null;
   private logger: Logger;
@@ -73,6 +78,7 @@ export class MemoryIndex {
     mmrLambda?: number;
     retrievalBoost?: number;
     retrievalBoostCap?: number;
+    domainBoosts?: Array<{ pattern: string; boost: number }>;
   }) {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
@@ -89,6 +95,15 @@ export class MemoryIndex {
     this.mmrLambda = options?.mmrLambda ?? 0.7;
     this.retrievalBoost = options?.retrievalBoost ?? 0.4;
     this.retrievalBoostCap = options?.retrievalBoostCap ?? 1.5;
+    this.domainBoosts = options?.domainBoosts ?? [
+      // Defaults: identity files are foundational but rarely retrieved, so
+      // they need a structural boost independent of use-dependent weighting.
+      // Initial probe values; autoresearch should tune these.
+      { pattern: "/identity/", boost: 2.0 },
+      { pattern: "/memory/MEMORY.md", boost: 1.8 },
+      { pattern: "/user/", boost: 1.3 },
+      { pattern: "/crm/", boost: 1.15 },
+    ];
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider): void {
@@ -121,6 +136,10 @@ export class MemoryIndex {
     if (config.mmrLambda !== undefined) this.mmrLambda = config.mmrLambda;
     if ((config as Record<string, unknown>).retrievalBoost !== undefined) this.retrievalBoost = (config as Record<string, unknown>).retrievalBoost as number;
     if ((config as Record<string, unknown>).retrievalBoostCap !== undefined) this.retrievalBoostCap = (config as Record<string, unknown>).retrievalBoostCap as number;
+    const db = (config as Record<string, unknown>).domainBoosts;
+    if (Array.isArray(db)) {
+      this.domainBoosts = db as Array<{ pattern: string; boost: number }>;
+    }
   }
 
   async initialize(dbPath: string): Promise<void> {
@@ -374,6 +393,21 @@ export class MemoryIndex {
     for (const result of results.values()) {
       if (this.isDreamContent(result.path)) {
         result.score *= this.dreamBaseWeight;
+      }
+    }
+
+    // Per-domain structural boost: identity/user/crm files get a multiplicative
+    // boost regardless of retrieval history. Compensates for cold-start on
+    // high-value but infrequently-hit files (e.g. soul.md, user.md).
+    if (this.domainBoosts.length > 0 && results.size > 0) {
+      for (const result of results.values()) {
+        let boost = 1;
+        for (const rule of this.domainBoosts) {
+          if (result.path.includes(rule.pattern) && rule.boost > boost) {
+            boost = rule.boost;
+          }
+        }
+        if (boost > 1) result.score *= boost;
       }
     }
 
