@@ -265,15 +265,18 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       // Log retrievals (fire-and-forget)
       loop.getMemoryIndex().logRetrievals(query, deduped.map(r => ({ path: r.path, score: r.score })));
 
-      // ACC Conflict Monitor: check for contradictions in search results
+      // ACC Conflict Monitor: resolve any conflicts disambiguated by the current
+      // result set, then check for new contradictions.
       let conflictNote = "";
       try {
-        const conflicts = loop.getConflictMonitor().checkConflicts(
-          deduped.map(r => ({ path: r.path, content: r.content, score: r.score, chunkIndex: 0 })),
-          { query, domain: undefined },
-        );
+        const cm = loop.getConflictMonitor();
+        const simpleResults = deduped.map(r => ({ path: r.path, content: r.content, score: r.score, chunkIndex: 0 }));
+        // Auto-resolver runs first so a just-disambiguated row isn't also re-detected.
+        // Domain is inferred by ConflictMonitor from the top result when not supplied.
+        cm.checkForAutoResolutions(simpleResults);
+        const conflicts = cm.checkConflicts(simpleResults, { query, domain: undefined });
         for (const conflict of conflicts) {
-          loop.getConflictMonitor().logConflict(conflict);
+          cm.logConflict(conflict);
         }
         const serious = conflicts.filter(c => c.severity === "high" || c.severity === "critical");
         if (serious.length > 0) {

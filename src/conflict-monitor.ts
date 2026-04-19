@@ -174,6 +174,55 @@ export class ConflictMonitor {
   }
 
   /**
+   * Auto-resolver — when a search returns paths that were previously flagged as
+   * a near-equal-score contradiction, and the score gap has now widened past
+   * `minScoreDiff`, mark the old conflict resolved with source="auto". Only
+   * resolves `memory_contradiction` rows (the only type whose description
+   * embeds two paths). Returns the number of conflicts resolved.
+   *
+   * Only handles the case where both paths reappear in the current results —
+   * the "one present, one absent" case is intentionally left to the decay
+   * path, since absence from a single query's top-K doesn't imply global loss.
+   */
+  checkForAutoResolutions(
+    searchResults: SearchResult[],
+    domain?: string,
+    minScoreDiff = 0.15,
+  ): number {
+    if (!this.db || searchResults.length === 0) return 0;
+    const resolvedDomain = domain ?? this.inferDomain(searchResults);
+    const open = this.getOpenConflicts(resolvedDomain).filter(c => c.type === "memory_contradiction");
+    if (open.length === 0) return 0;
+
+    const pathScores = new Map<string, number>();
+    for (const r of searchResults.slice(0, 5)) {
+      const existing = pathScores.get(r.path);
+      if (existing === undefined || r.score > existing) pathScores.set(r.path, r.score);
+    }
+
+    let resolved = 0;
+    for (const c of open) {
+      const m = c.description.match(/"([^"]+)"\s*vs\s*"([^"]+)"/);
+      if (!m) continue;
+      const [, pathA, pathB] = m;
+      const scoreA = pathScores.get(pathA);
+      const scoreB = pathScores.get(pathB);
+      if (scoreA === undefined || scoreB === undefined) continue;
+      const diff = Math.abs(scoreA - scoreB);
+      if (diff <= minScoreDiff) continue;
+      const winner = scoreA > scoreB ? pathA : pathB;
+      const loser = scoreA > scoreB ? pathB : pathA;
+      this.resolveConflict({
+        conflictId: c.id,
+        resolution: `Retrieval disambiguated: "${winner}" dominates "${loser}" by ${diff.toFixed(3)}`,
+        source: "auto",
+      });
+      resolved++;
+    }
+    return resolved;
+  }
+
+  /**
    * Classify memory_contradiction severity based on metric signals.
    * Added 2026-04-19 — previously severity was hardcoded "low" which made the
    * decay pipeline and fast-loop alert gating useless. These thresholds are
