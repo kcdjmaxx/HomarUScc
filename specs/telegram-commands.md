@@ -19,9 +19,13 @@ The Telegram adapter intercepts messages starting with `/` before they reach the
 
 | Command | Action |
 |---------|--------|
-| `/status` | Reply with system health: channels, timers, memory stats, whether Claude is connected (event loop active) |
-| `/restart` | Kill current Claude Code process and start a new session with `/homaruscc` |
 | `/ping` | Reply "pong" — minimal liveness check |
+| `/status` | Reply with system health: channels, timers, memory stats, whether Claude is connected (event loop active) |
+| `/compaction` | Reply with compaction counter + loop failures + pending flag |
+| `/restart` | Kill current Claude Code process and start a new session with `/homaruscc` |
+| `/nuke` | Kill **all** Claude processes system-wide and restart fresh (use when `/restart` isn't enough) |
+| `/missed <desc>` | Log an ACC recall failure — a conflict or correction the monitor should have caught but didn't. Feeds missed_conflict_log for recall-side tracking |
+| `/resolve [<id> <note>]` | With no args: list up to 10 open ACC conflicts with ids. With `<id> <note>`: close the conflict with `resolution_source="user"` via `ConflictMonitor.resolveById`. Closes BUG-20260419-4 resolver gap. |
 
 Unknown `/` commands pass through to Claude as normal messages (so Claude can still see user intent like "/remind me..." which aren't real commands).
 
@@ -92,9 +96,26 @@ echo "Claude PID: $!"
 
 Note: The exact claude CLI invocation needs validation. The `--dangerously-skip-permissions` flag avoids interactive permission prompts. The `-p` flag runs a prompt non-interactively. We may need `--continue` or a different approach depending on how CC handles session startup.
 
+## ACC Commands: `/missed` and `/resolve`
+
+These two commands give the user direct read/write access to the ACC Conflict Monitor's precision and recall sides from Telegram. Both execute synchronously in the command handler — no Claude involvement.
+
+### `/missed <description>`
+Logs a miss — a conflict or correction the monitor should have caught but didn't. Writes to `missed_conflict_log` via `ConflictMonitor.logMissedConflict`. Domain is inferred heuristically from keywords in the description (max/user/kcdjmaxx → user-intent, caul/soul/identity → identity, dream → dream, else general).
+
+Reply: `"Logged miss #N (domain: <inferred>). This counts toward recall tracking and will surface in the weekly conflict reconsolidation."`
+
+### `/resolve [<id> <note>]`
+Two shapes:
+- **No args:** lists up to 10 open conflicts formatted as `#<id> [<severity>/<domain>] <description>` so the user can pick one.
+- **`<id> <note>`:** resolves conflict id N with `resolution=<note>`, `resolution_source="user"` via `ConflictMonitor.resolveById`. Validates the row exists and isn't already resolved (returns a useful error message in each failure case).
+
+This completes the three-way resolution loop alongside the search-path auto-resolver (source=`auto`) and the long-tail decay path (source=`auto`, text=`"Auto-decayed after prolonged inactivity"`).
+
 ## Security
 
 - Only messages from allowed chat IDs can trigger commands (existing allowedChatIds filter)
 - `/restart` kills only claude processes, not arbitrary processes
+- `/nuke` is broader — kills all claude processes system-wide; reserved for deeper recovery scenarios
 - The restart script is scoped to the homaruscc project directory
 - No remote code execution — commands are a fixed set, not arbitrary

@@ -3,12 +3,12 @@ tags:
   - project/homaruscc
   - subject/agent-architecture
   - type/build-brief
-  - status/ready-to-build
+  - status/shipped-with-refinements
 ---
 
 # ACC Conflict Monitor — Build Brief
 
-**Status:** Design complete, ready to build
+**Status:** Shipped (initial Phase A/B) + refinements landed 2026-04-19. See the "Refinements Shipped" section at the bottom for what changed beyond the original brief.
 **Design spec:** specs/acc-conflict-monitor-questionnaire.md (22 questions, all answered)
 **Build method:** /mini-spec → /build → /autoresearch
 **Priority:** Build BEFORE Phase 3 (structured schema)
@@ -147,6 +147,40 @@ class ConflictMonitor {
 - Add memory contradiction detection (Phase B) after behavioral conflicts are stable
 - Check explore-exploit tuning via autoresearch after 2 weeks
 - Present monthly ACC report to Max for review
+
+---
+
+## Refinements Shipped (2026-04-19)
+
+These all post-date the original brief and are live in main.
+
+### Severity promotion (commit `5aaf39a`)
+`memory_contradiction` was being logged with hardcoded `severity="low"`, which made the decay pipeline and alert gating useless. `classifyContradictionSeverity(scoreDiff, overlap, domain)` now promotes to `medium` when ambiguity is tight (`scoreDiff < 0.02` AND `overlap < 0.05`) and further to `high` when the tight-ambiguity case lands in a high-stakes domain (`user-intent`, `identity`). `critical` is reserved for explicit user escalation.
+
+### `/missed` recall signal (commit `5aaf39a`)
+Telegram-intercepted command that writes to a new `missed_conflict_log` table. Captures real conflicts the detector didn't catch — the recall-side counterpart to the precision metrics already tracked in `generateMonthlyReport()`. Domain is inferred from description keywords. Surfaces in the weekly conflict reconsolidation.
+
+### Step D — fast-loop alerts (commit `82a74e3`)
+`ConflictMonitor.logConflict` now evaluates two gates after insert:
+- **Severity gate:** severity ≥ configured threshold (default `high`) → immediate alert
+- **Burst gate:** ≥N (default 3) conflicts in same domain within window (default 10min) → alert
+
+Dispatched through a pluggable `fastLoopNotifier` callback. `homaruscc.ts` wires this to ChannelManager.send → Telegram, target = first `channels.telegram.allowedChatIds`. Rate-limited per `(domain, gate)` at 1 hour to prevent spam. Config: `acc.alerts.{enabled, severityThreshold, burstThreshold, burstWindowMs, rateLimitMs, chatId, channel}`. Unit harness: 12/12.
+
+### Resolver mechanism — fast path (commit `6b47fe7`, closes BUG-20260419-4 part A)
+`ConflictMonitor.checkForAutoResolutions(results, domain?, minScoreDiff=0.15)` is called at the top of every `memory_search`. Parses `"pathA" vs "pathB"` out of each open `memory_contradiction` in the current domain, and if both paths reappear in the current top-5 with a score gap > `minScoreDiff`, resolves with `source="auto"` and resolution text naming winner/loser/diff. Unilateral presence is *not* resolved (that's the decay path's job — absence from one query's top-K doesn't prove global loss). Unit harness: 11/11.
+
+### Resolver mechanism — user path (commit `8907255` + glue in `d10352f`, closes BUG-20260419-4 part B)
+`/resolve <id> <note>` Telegram command routes to `ConflictMonitor.resolveById`, which validates existence + not-already-resolved and applies `source="user"`. With no args, the command lists up to 10 open conflicts for easy reference. Unit harness: 13/13.
+
+### Backend extension loader (commit `d10352f`)
+Not strictly ACC, but related: `backend.ts` now loads personal/business pipelines (hiring, reports) via a dynamic import of `./personal-extensions.js` (gitignored) wrapped in try/catch. Fresh clones of the public repo run without them. This also landed the committed `CommandContext` wiring for `logMissedConflict`, `resolveConflict`, and `listOpenConflicts` which had been stranded as uncommitted local edits.
+
+### Eval patterns added
+- `acc-fast-loop-alerts` — alert precision, p95 latency, rate-limit correctness, burst sensitivity, suppression-during-silence
+- `acc-resolution-mechanism` — resolution-rate by source (expect auto + user + decay mix), mean non-decay time-to-resolution, auto-resolver precision spot-check, open-conflict trend
+
+Findings log entries #5–#7 in `local/research/eval-findings-log.md`.
 
 ---
 
