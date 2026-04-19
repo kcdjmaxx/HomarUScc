@@ -127,7 +127,6 @@ export interface ConfigData {
   agents?: AgentsConfig;
   spaces?: SpacesConfig;
   homeAssistant?: HomeAssistantConfig;
-  factExtractor?: FactExtractorConfig | false;
   acc?: AccConfig;
 }
 
@@ -141,13 +140,6 @@ export interface AccConfig {
     burstWindowMs?: number;
     rateLimitMs?: number;
   };
-}
-
-export interface FactExtractorConfig {
-  enabled?: boolean;
-  batchSize?: number;
-  extractionDelayMs?: number;
-  model?: string;
 }
 
 export interface SpacesConfig {

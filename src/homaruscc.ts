@@ -17,7 +17,6 @@ import { registerBuiltinTools } from "./tools/index.js";
 import { TranscriptLogger } from "./transcript-logger.js";
 import { SessionCheckpoint } from "./session-checkpoint.js";
 import { AgentRegistry } from "./agent-registry.js";
-import { FactExtractor } from "./fact-extractor.js";
 import { SessionExtractor } from "./session-extractor.js";
 import { DocsIndex } from "./docs-index.js";
 import { ConflictMonitor } from "./conflict-monitor.js";
@@ -46,7 +45,6 @@ export class HomarUScc {
   private transcriptLogger?: TranscriptLogger;
   private sessionCheckpoint!: SessionCheckpoint;
   private agentRegistry!: AgentRegistry;
-  private factExtractor?: FactExtractor;
   private sessionExtractor?: SessionExtractor;
   private docsIndex?: DocsIndex;
   private conflictMonitor: ConflictMonitor;
@@ -136,10 +134,6 @@ export class HomarUScc {
 
   getAgentRegistry(): AgentRegistry {
     return this.agentRegistry;
-  }
-
-  getFactExtractor(): FactExtractor | undefined {
-    return this.factExtractor;
   }
 
   getSessionExtractor(): SessionExtractor | undefined {
@@ -352,26 +346,12 @@ export class HomarUScc {
       });
     }
 
-    // 3c. Fact extractor (passive Haiku-based fact extraction from conversations)
-    const feCfg = configData.factExtractor;
-    if (feCfg !== false) {
-      this.factExtractor = new FactExtractor(this.logger, this.memoryIndex, {
-        enabled: (typeof feCfg === "object" ? feCfg?.enabled : true) ?? true,
-        batchSize: typeof feCfg === "object" ? feCfg?.batchSize : undefined,
-        extractionDelayMs: typeof feCfg === "object" ? feCfg?.extractionDelayMs : undefined,
-        model: typeof feCfg === "object" ? feCfg?.model : undefined,
-      });
-      this.registerHandler("message", (event) => {
-        const payload = event.payload as MessagePayload;
-        this.factExtractor?.addTurn({
-          timestamp: event.timestamp,
-          direction: "in",
-          sender: payload.from,
-          text: payload.text,
-        });
-      });
-      this.logger.info("FactExtractor enabled");
-    }
+    // Fact extraction moved to the caller-side reflection step (2026-04-19).
+    // Claude Code's per-event reflection discipline identifies extractable
+    // facts and spawns a Haiku sub-agent via the Task tool with model:"haiku"
+    // to structure them, then memory_stores the result. Keeps LLM work out
+    // of the backend hot path and off the Anthropic API credit meter.
+    // See local/user/preferences/haiku-subagent-for-mundane-llm-work.
 
     // 3d. Session transcript extractor (extracts insights from Claude Code JSONL logs)
     this.sessionExtractor = new SessionExtractor(this.logger, this.memoryIndex);
@@ -502,7 +482,6 @@ export class HomarUScc {
     await this.skillManager.stopAll();
     this.skillManager.stopWatching();
     await this.transcriptLogger?.stop();
-    await this.factExtractor?.flush();
     this.memoryIndex.stopWatching();
     this.docsIndex?.close();
     this.vaultIndex?.close();
@@ -628,7 +607,6 @@ export class HomarUScc {
       docs: this.docsIndex?.listDomains() ?? [],
       timers: this.timerService?.getAll().length ?? 0,
       eventHistory: this.eventHistory.length,
-      factExtractor: this.factExtractor?.getStats() ?? null,
       sessionExtractor: this.sessionExtractor?.getStats() ?? null,
     };
   }
