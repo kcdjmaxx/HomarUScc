@@ -617,7 +617,15 @@ export class MemoryIndex {
 
   // CRC: crc-MemoryIndex.md | R84, R85, R88
   private isEvergreen(path: string): boolean {
-    return this.evergreenPatterns.some((pattern) => path.endsWith(pattern));
+    // Case-insensitive endsWith so DEFAULT_EVERGREEN_PATTERNS (MEMORY.md,
+    // SOUL.md, USER.md as convention) matches actual lowercased files on
+    // disk (soul.md, user.md). Found 2026-04-19 by nightly-neuro-eval
+    // pattern 3 (Evergreen Memory — LTP Analog): soul.md and user.md were
+    // silently missing decay protection because the pattern used uppercase.
+    const lowerPath = path.toLowerCase();
+    return this.evergreenPatterns.some((pattern) =>
+      lowerPath.endsWith(pattern.toLowerCase()),
+    );
   }
 
   // CRC: crc-DreamScoring.md | R117
