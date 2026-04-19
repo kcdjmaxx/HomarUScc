@@ -44,30 +44,32 @@ class BackendManager {
       // Backend reads from config, but we ensure consistency
     }
 
-    this.child = spawn("node", [this.backendScript], {
+    const child = spawn("node", [this.backendScript], {
       stdio: ["ignore", "ignore", "pipe"],
       env,
     });
+    this.child = child;
+    const expectedPid = child.pid;
 
     // Pipe backend stderr through to our stderr
-    this.child.stderr?.on("data", (data: Buffer) => {
+    child.stderr?.on("data", (data: Buffer) => {
       process.stderr.write(data);
     });
 
-    this.child.on("exit", (code, signal) => {
-      log("WARN", "Backend process exited", { code, signal });
-      this.child = null;
+    child.on("exit", (code, signal) => {
+      log("WARN", "Backend process exited", { code, signal, pid: expectedPid });
+      if (this.child === child) this.child = null;
     });
 
-    // Wait for backend to become healthy
-    await this.waitForHealthy();
+    // Wait for backend to become healthy AND confirm the responder is this child
+    await this.waitForHealthy(expectedPid, child);
   }
 
   async restart(): Promise<void> {
     log("INFO", "Restarting backend...");
     await this.stop();
     await this.spawn();
-    log("INFO", "Backend restarted successfully");
+    log("INFO", "Backend restarted successfully", { pid: this.child?.pid });
   }
 
   async stop(): Promise<void> {
@@ -76,35 +78,80 @@ class BackendManager {
     const child = this.child;
     this.child = null;
 
+    // Already exited — nothing to do
+    if (child.exitCode !== null || child.signalCode !== null) return;
+
     return new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        log("WARN", "Backend didn't exit gracefully, killing");
-        child.kill("SIGKILL");
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(killTimer);
+        clearTimeout(hardTimer);
         resolve();
+      };
+
+      child.once("exit", finish);
+
+      // Try SIGTERM first
+      child.kill("SIGTERM");
+
+      // After 5s, escalate to SIGKILL
+      const killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          log("WARN", "Backend didn't exit on SIGTERM, sending SIGKILL", { pid: child.pid });
+          child.kill("SIGKILL");
+        }
       }, 5000);
 
-      child.on("exit", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-
-      child.kill("SIGTERM");
+      // Hard cap — if even SIGKILL doesn't deliver an exit in 8s total, give up
+      // (don't spawn a new process on top of a still-running one)
+      const hardTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          log("ERROR", "Backend survived SIGKILL after 8s — refusing to spawn", { pid: child.pid });
+          // Restore this.child so callers see the stuck state instead of silently spawning
+          this.child = child;
+          done = true;
+          resolve();
+        }
+      }, 8000);
     });
   }
 
-  private async waitForHealthy(): Promise<void> {
+  private async waitForHealthy(expectedPid: number | undefined, child: ChildProcess): Promise<void> {
     const deadline = Date.now() + 30_000;
+    let lastMismatchPid: number | undefined;
     while (Date.now() < deadline) {
+      // Child died during startup — no point polling
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(
+          `Backend process exited during startup (code=${child.exitCode}, signal=${child.signalCode}). ` +
+            `Likely cause: port ${BACKEND_PORT} still held by a previous instance (EADDRINUSE).`,
+        );
+      }
       try {
         const res = await fetch(`${BACKEND_URL}/api/health`);
         if (res.ok) {
-          log("INFO", "Backend is healthy");
+          const body = await res.json().catch(() => ({})) as { pid?: number };
+          if (expectedPid !== undefined && body.pid !== undefined && body.pid !== expectedPid) {
+            lastMismatchPid = body.pid;
+            // Another process is answering on this port — wait it out, it may release
+            await new Promise((r) => setTimeout(r, 200));
+            continue;
+          }
+          log("INFO", "Backend is healthy", { pid: body.pid ?? expectedPid });
           return;
         }
       } catch {
         // Not ready yet
       }
       await new Promise((r) => setTimeout(r, 200));
+    }
+    if (lastMismatchPid !== undefined) {
+      throw new Error(
+        `Backend failed to become healthy within 30s: a different process (pid=${lastMismatchPid}) ` +
+          `is answering on port ${BACKEND_PORT}, not the child we spawned (pid=${expectedPid}).`,
+      );
     }
     throw new Error("Backend failed to become healthy within 30s");
   }

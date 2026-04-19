@@ -338,7 +338,7 @@ export class DashboardServer {
 
     // --- Proxy API routes (used by mcp-proxy.ts) ---
     this.app.get("/api/health", (_req, res) => {
-      res.json({ ok: true, state: "running" });
+      res.json({ ok: true, state: "running", pid: process.pid });
     });
 
     // Phone channel: check if Claude Code has an active event loop consumer
