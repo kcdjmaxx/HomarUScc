@@ -84,20 +84,17 @@ export class SpacesManager {
     return entries.length === 0;
   }
 
-  // R306: Pre-seed default bucket structure
+  // R306: Pre-seed default bucket structure. These are generic starter
+  // buckets — users can add their own (business, personal, etc.) from the
+  // dashboard. Previously seeded a fixed set of Max's business buckets;
+  // those live in local config now and aren't part of the public default.
   private seedDefaults(): void {
     const now = new Date().toISOString();
     const defaults: Array<{ path: string; name: string; color?: string; description?: string; sortOrder: number }> = [
-      { path: "fric-and-frac", name: "Fric & Frac", color: "#4ade80", description: "Restaurant operations and projects", sortOrder: 0 },
-      { path: "fric-and-frac/marketing", name: "Marketing", description: "Campaign ideas, seasonal plans", sortOrder: 0 },
-      { path: "fric-and-frac/staffing", name: "Staffing", description: "Hiring, schedules, training", sortOrder: 1 },
-      { path: "fric-and-frac/menu", name: "Menu", description: "New items, vendor notes, seasonal changes", sortOrder: 2 },
-      { path: "fric-and-frac/operations", name: "Operations", description: "Equipment, repairs, vendor follow-ups", sortOrder: 3 },
-      { path: "miami-ice", name: "Miami Ice", color: "#60a5fa", description: "Miami Ice venture", sortOrder: 1 },
-      { path: "personal", name: "Personal", color: "#f59e0b", description: "Non-business items", sortOrder: 2 },
-      { path: "projects", name: "Projects", color: "#c4b5fd", description: "Technical and creative work", sortOrder: 3 },
+      { path: "personal", name: "Personal", color: "#f59e0b", description: "Non-work items", sortOrder: 0 },
+      { path: "projects", name: "Projects", color: "#c4b5fd", description: "Technical and creative work", sortOrder: 1 },
       { path: "projects/homaruscc", name: "HomarUScc", description: "Feature ideas, bugs, improvements", sortOrder: 0 },
-      { path: "projects/ted-talk", name: "TED Talk", description: "Presentation prep, research", sortOrder: 1 },
+      { path: "notes", name: "Notes", color: "#4ade80", description: "Quick captures and reference", sortOrder: 2 },
     ];
 
     for (const d of defaults) {

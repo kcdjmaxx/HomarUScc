@@ -25,7 +25,7 @@ An item is a markdown file with YAML frontmatter containing: id, status, priorit
 
 Directory-based storage at a configurable path (default: `{vault}/Spaces/`). Configurable via `~/.homaruscc/config.json` under `spaces.path`. The vault root is derived by going up from the project CWD (`ClawdBot/homaruscc/`).
 
-Default buckets pre-seeded on first run: Fric & Frac (with sub-buckets: Marketing, Staffing, Menu, Operations), Miami Ice, Personal, Projects (with sub-buckets: HomarUScc, TED Talk).
+Default buckets pre-seeded on first run: Personal, Projects (with sub-bucket: HomarUScc), Notes. Users add their own (business areas, side projects, etc.) from the dashboard after first launch.
 
 ## Backend
 

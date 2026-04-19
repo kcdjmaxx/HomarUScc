@@ -61,6 +61,58 @@ journal/
 research/
 planning/
 
+# Personal projects tracked outside the core repo
+/ai-tutor/
+/eth-strategy/
+
+# Personal business pages + landing assets
+/miami-ice-*.html
+/landing-page.html
+/acc-website-*.md
+/fricandfrac-*.md
+
+# Root-level research / transcripts / prep notes — broad catch-all so new
+# files of the same shape won't leak via `git add -A`.
+/*-research.md
+/homarus-*.md
+/repo-assessment.md
+/show-hn-prep.md
+/skills-strategy.md
+/*.transcript.md
+/youtube-*.md
+/oscar-*.pdf
+
+# Personal mail / budget / token utility scripts
+/check-gmail*.mjs
+/check-gmail*.js
+/check-mail*.mjs
+/check-mail*.js
+/peek-gmail*.mjs
+/bin/budget-monitor
+/bin/run-kimi-sweep
+/bin/token-check
+/bin/token-report
+
+# Autoresearch workspaces (per-run, not part of the shipped repo)
+/.autoresearch/
+/autoresearch-*/
+/.build/
+/.build-*/
+
+# Personal extensions — UI components + specs/design for hiring pipeline
+dashboard/src/components/ApplicantView.tsx
+dashboard/src/components/InterviewView.tsx
+design/crc-Applicant*.md
+design/crc-HiringPipeline.md
+design/crc-ReportPipeline.md
+design/seq-applicant-*.md
+design/seq-hiring-*.md
+specs/applicant-tracker.md
+specs/hiring-workflow-prd.md
+specs/interview-scheduler.md
+specs/ai-tutor-app.md
+specs/reports-pipeline-prd.md
+
 # Personal dashboard components
 dashboard/src/components/AgentChat.tsx
 dashboard/src/components/JournalView.tsx

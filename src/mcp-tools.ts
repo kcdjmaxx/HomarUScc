@@ -915,7 +915,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     inputSchema: {
       type: "object",
       properties: {
-        bucketId: { type: "string", description: "Bucket ID (e.g., bucket-fric-and-frac)" },
+        bucketId: { type: "string", description: "Bucket ID (e.g., bucket-projects, bucket-notes)" },
         recursive: { type: "boolean", description: "Include sub-buckets (default false)" },
       },
       required: ["bucketId"],
@@ -1838,44 +1838,10 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
-  // --- PRD reports-pipeline-prd.md: Manual report processing tool ---
-  tools.push({
-    name: "process_report",
-    description: "Process a report JSON file through the deterministic pipeline: coerce schema, render HTML, send via Zoho email. Use after a report agent writes JSON to ~/.homaruscc/reports/YYYY-MM-DD/{type}.json",
-    inputSchema: {
-      type: "object",
-      properties: {
-        type: {
-          type: "string",
-          description: "Report type: daily-research, max-life, fric-frac, competitive-pulse, or daily-improvement",
-        },
-        date: {
-          type: "string",
-          description: "Report date in YYYY-MM-DD format",
-        },
-      },
-      required: ["type", "date"],
-    },
-    async handler(params) {
-      const { type, date } = params as { type: string; date: string };
-      try {
-        const { processReport } = await import("./report-pipeline.js");
-        const toolLogger = {
-          debug(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[DEBUG] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
-          info(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[INFO] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
-          warn(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[WARN] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
-          error(msg: string, meta?: Record<string, unknown>) { process.stderr.write(`[ERROR] ${msg} ${meta ? JSON.stringify(meta) : ""}\n`); },
-        };
-        const result = await processReport(type, date, toolLogger);
-        if (result.success) {
-          return { content: [{ type: "text", text: `Report ${type} for ${date} processed and sent successfully.` }] };
-        }
-        return { content: [{ type: "text", text: `Report processing failed: ${result.error}` }] };
-      } catch (err) {
-        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
-      }
-    },
-  });
 
-  return tools;
+  // Append any tools registered by optional extensions (see
+  // HomarUScc.registerExtraMcpTool). Fresh clones of the public repo have
+  // none — this is how gitignored modules like personal-extensions.ts
+  // contribute their own MCP tool surface.
+  return [...tools, ...loop.getExtraMcpTools()];
 }

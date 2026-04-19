@@ -5,7 +5,7 @@ import { ThemeProvider, useTheme } from "./theme";
 import { Sidebar } from "./components/Sidebar";
 import { getSidebarSkills, getDefaultViewId } from "./skills-registry";
 
-// R404: Import all sidebar skill files to trigger self-registration
+// R404: Import all core sidebar skill files to trigger self-registration
 import "./components/Chat";
 import "./components/AgentChat";
 import "./components/EventLog";
@@ -17,7 +17,9 @@ import "./components/JournalView";
 import "./components/SpacesView";
 import "./components/AppsView";
 
-// R404: Dynamically load plugin frontend components (gitignored, per-user)
+// R404: Dynamically load plugin frontend components (gitignored, per-user).
+// Personal views (hiring, sensor, etc.) live here so fresh clones of the
+// public repo build without them — the glob silently matches zero files.
 const pluginModules = import.meta.glob("./plugins/*.tsx", { eager: true });
 void pluginModules; // side-effect imports trigger registerSkill
 
@@ -152,6 +154,7 @@ function AppInner() {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column" as const,
+        paddingTop: isMobile && !sidebarOpen ? 48 : 0,
       }}>
         {ActiveComponent && <ActiveComponent messages={messages} send={send} />}
       </main>

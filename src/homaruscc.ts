@@ -64,6 +64,12 @@ export class HomarUScc {
   // MCP notification callback — called when events need Claude Code's attention
   private notifyFn: ((event: Event) => void) | null = null;
 
+  // Extra MCP tools contributed by optional extensions (personal-extensions.ts
+  // etc.). createMcpTools() concats these onto the committed tool list so
+  // gitignored modules can ship their own tool surface without modifying core.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private extraMcpTools: any[] = [];
+
   constructor(logger: Logger, configPath?: string) {
     this.logger = logger;
     this.config = new Config(logger, configPath);
@@ -157,6 +163,18 @@ export class HomarUScc {
   // Set the MCP notification callback
   setNotifyFn(fn: (event: Event) => void): void {
     this.notifyFn = fn;
+  }
+
+  // Extensions register extra MCP tools here. createMcpTools() appends them
+  // so gitignored optional modules can add tool surface without editing core.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registerExtraMcpTool(tool: any): void {
+    this.extraMcpTools.push(tool);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getExtraMcpTools(): any[] {
+    return [...this.extraMcpTools];
   }
 
   emit(event: Event): void {

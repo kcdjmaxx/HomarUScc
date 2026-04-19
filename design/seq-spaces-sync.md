@@ -79,20 +79,6 @@ SpacesManager              Filesystem
     |-- mkdir Spaces/ ------->|
     |-- write _root.md ------>|
     |                         |
-    |-- mkdir fric-and-frac/ ->|
-    |-- write _bucket.md ---->|
-    |-- mkdir marketing/ ---->|
-    |-- write _bucket.md ---->|
-    |-- mkdir staffing/ ----->|
-    |-- write _bucket.md ---->|
-    |-- mkdir menu/ --------->|
-    |-- write _bucket.md ---->|
-    |-- mkdir operations/ --->|
-    |-- write _bucket.md ---->|
-    |                         |
-    |-- mkdir miami-ice/ ---->|
-    |-- write _bucket.md ---->|
-    |                         |
     |-- mkdir personal/ ----->|
     |-- write _bucket.md ---->|
     |                         |
@@ -100,6 +86,7 @@ SpacesManager              Filesystem
     |-- write _bucket.md ---->|
     |-- mkdir homaruscc/ ---->|
     |-- write _bucket.md ---->|
-    |-- mkdir ted-talk/ ----->|
+    |                         |
+    |-- mkdir notes/ -------->|
     |-- write _bucket.md ---->|
 ```
