@@ -10,6 +10,7 @@ export interface CommandContext {
   getLastWaitPoll: () => number;
   projectDir: string;
   sendTelegram: (chatId: string, text: string) => Promise<void>;
+  logMissedConflict?: (domain: string, description: string) => number;
 }
 
 type CommandHandler = (chatId: string, args: string, ctx: CommandContext) => Promise<string>;
@@ -123,6 +124,30 @@ export class TelegramCommandHandler {
 
       this.logger.info("Spawned nuke-claude script", { pid: child.pid });
       return "\u2622\ufe0f Nuking all Claude processes and restarting from scratch...";
+    });
+
+    // /missed — user flags a conflict/recall that ACC didn't catch.
+    // Writes to missed_conflict_log via ConflictMonitor for recall-side tracking.
+    // Usage: /missed <short description of what was missed>
+    // Added 2026-04-19 as part of ACC fast-loop refinement.
+    this.register("missed", async (_chatId, args, ctx) => {
+      const trimmed = args.trim();
+      if (!trimmed) {
+        return "Usage: /missed <describe what the ACC missed — a contradiction, wrong retrieval, or stored fact I didn't use>";
+      }
+      if (!ctx.logMissedConflict) {
+        return "ConflictMonitor not available on backend.";
+      }
+      // Infer domain heuristically from the description keywords.
+      const lower = trimmed.toLowerCase();
+      let domain = "general";
+      if (/max|user|kcdjmaxx|you|your/.test(lower)) domain = "user-intent";
+      else if (/caul|soul|identity|who|name/.test(lower)) domain = "identity";
+      else if (/dream/.test(lower)) domain = "dream";
+      const id = ctx.logMissedConflict(domain, trimmed);
+      return id > 0
+        ? `Logged miss #${id} (domain: ${domain}). This counts toward recall tracking and will surface in the weekly conflict reconsolidation.`
+        : "Failed to log miss — ConflictMonitor DB not initialized.";
     });
   }
 }

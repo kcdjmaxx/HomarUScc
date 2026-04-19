@@ -79,20 +79,25 @@ export class ConflictMonitor {
     const domain = context?.domain ?? this.inferDomain(searchResults);
 
     // 1. Score divergence check — if top-2 results have very different scores,
-    // it may indicate contradictory information at different confidence levels
+    // it may indicate contradictory information at different confidence levels.
+    // Severity promotion (2026-04-19, BUG-20260419-x followup): was hardcoded
+    // "low" — now classifies based on score proximity, content overlap, and
+    // domain sensitivity so the fast-loop alert path has something to gate on.
     if (searchResults.length >= 2) {
       const [first, second] = searchResults;
       const scoreDiff = first.score - second.score;
-      // If scores are close but content is from very different paths, flag potential contradiction
       if (scoreDiff < 0.05 && first.path !== second.path) {
         const contentOverlap = this.computeContentOverlap(first.content, second.content);
         if (contentOverlap < 0.2) {
+          const severity = this.classifyContradictionSeverity(scoreDiff, contentOverlap, domain);
+          const emotionalWeight = severity === "high" ? 0.6 : severity === "medium" ? 0.4 : 0.2;
+          const cognitiveWeight = severity === "high" ? 0.8 : severity === "medium" ? 0.65 : 0.5;
           conflicts.push({
             type: "memory_contradiction",
-            severity: "low",
+            severity,
             domain,
-            emotionalWeight: 0.2,
-            cognitiveWeight: 0.5,
+            emotionalWeight,
+            cognitiveWeight,
             description: `Near-equal scores for divergent content: "${first.path}" vs "${second.path}" (score diff: ${scoreDiff.toFixed(3)}, overlap: ${contentOverlap.toFixed(2)})`,
           });
         }
@@ -125,6 +130,30 @@ export class ConflictMonitor {
     });
 
     return filtered;
+  }
+
+  /**
+   * Classify memory_contradiction severity based on metric signals.
+   * Added 2026-04-19 — previously severity was hardcoded "low" which made the
+   * decay pipeline and fast-loop alert gating useless. These thresholds are
+   * metric-only (score + overlap + domain); keyword-match promotion to
+   * "critical" (via user/corrections/*) is a future extension.
+   *
+   * low    — default; basic near-equal ambiguity that's cheap to let sit
+   * medium — tight ambiguity (score_diff < 0.02) AND very low overlap (< 0.05)
+   * high   — medium criteria AND domain is high-stakes (user-intent, identity)
+   * critical — reserved for user-flagged corrections (via /missed or resolver)
+   */
+  private classifyContradictionSeverity(
+    scoreDiff: number,
+    overlap: number,
+    domain: string,
+  ): "low" | "medium" | "high" | "critical" {
+    const HIGH_STAKES_DOMAINS = new Set(["user-intent", "identity"]);
+    const tightAmbiguity = scoreDiff < 0.02 && overlap < 0.05;
+    if (tightAmbiguity && HIGH_STAKES_DOMAINS.has(domain)) return "high";
+    if (tightAmbiguity) return "medium";
+    return "low";
   }
 
   logConflict(conflict: Conflict): number {
