@@ -83,8 +83,8 @@ export class MemoryIndex {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
     this.chunkOverlap = options?.chunkOverlap ?? 80;
-    this.vectorWeight = options?.vectorWeight ?? 0.7;
-    this.ftsWeight = options?.ftsWeight ?? 0.3;
+    this.vectorWeight = options?.vectorWeight ?? 0.5;
+    this.ftsWeight = options?.ftsWeight ?? 0.5;
     this.decayEnabled = options?.decayEnabled ?? true;
     this.decayHalfLifeDays = options?.decayHalfLifeDays ?? 30;
     this.evergreenPatterns = options?.evergreenPatterns ?? DEFAULT_EVERGREEN_PATTERNS;
@@ -93,16 +93,18 @@ export class MemoryIndex {
     this.dreamBaseWeight = options?.dreamBaseWeight ?? 0.5;
     this.mmrEnabled = options?.mmrEnabled ?? true;
     this.mmrLambda = options?.mmrLambda ?? 0.7;
-    this.retrievalBoost = options?.retrievalBoost ?? 0.4;
-    this.retrievalBoostCap = options?.retrievalBoostCap ?? 1.5;
+    this.retrievalBoost = options?.retrievalBoost ?? 0.8;
+    this.retrievalBoostCap = options?.retrievalBoostCap ?? 2.5;
     this.domainBoosts = options?.domainBoosts ?? [
-      // Defaults: identity files are foundational but rarely retrieved, so
-      // they need a structural boost independent of use-dependent weighting.
-      // Initial probe values; autoresearch should tune these.
-      { pattern: "/identity/", boost: 2.0 },
-      { pattern: "/memory/MEMORY.md", boost: 1.8 },
-      { pattern: "/user/", boost: 1.3 },
-      { pattern: "/crm/", boost: 1.15 },
+      // Uniform 3.0 chosen by autoresearch tuning 2026-04-19 (21 experiments
+      // against a 112-case harness). Lowering /user below 3.0 was actively
+      // harmful; per-domain variation didn't beat uniform at this scope.
+      // Pair with retrievalBoost=0.8, retrievalBoostCap=2.5 for the tuned
+      // F1=0.7589 baseline. autoresearch-memory/results.md has the full log.
+      { pattern: "/identity/", boost: 3.0 },
+      { pattern: "/memory/MEMORY.md", boost: 3.0 },
+      { pattern: "/user/", boost: 3.0 },
+      { pattern: "/crm/", boost: 3.0 },
     ];
   }
 
