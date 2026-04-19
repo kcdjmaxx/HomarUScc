@@ -28,7 +28,7 @@ Computational model of the anterior cingulate cortex. Detects contradictions, pr
 
 ```typescript
 interface Conflict {
-  type: "prediction_error" | "behavioral" | "memory_contradiction" | "effort_reward";
+  type: "prediction_error" | "behavioral" | "retrieval_ambiguity" | "effort_reward";
   severity: "low" | "medium" | "high" | "critical";
   domain: string;
   emotionalWeight: number;  // 0-1
@@ -103,7 +103,7 @@ After `logConflict` inserts a row, `checkFastLoopAlert` evaluates:
 
 ## Auto-Resolver
 
-`checkForAutoResolutions` runs at the top of every `memory_search`. For each open `memory_contradiction` in the current domain, parses the two paths from the stored description (format: `"pathA" vs "pathB"`), looks them up in the current top-5, and resolves only if both reappear with a widened gap (`scoreDiff > minScoreDiff`, default 0.15). Unilateral presence is intentionally left to the decay path.
+`checkForAutoResolutions` runs at the top of every `memory_search`. For each open `retrieval_ambiguity` in the current domain, parses the two paths from the stored description (format: `"pathA" vs "pathB"`), looks them up in the current top-5, and resolves only if both reappear with a widened gap (`scoreDiff > minScoreDiff`, default 0.15). Unilateral presence is intentionally left to the decay path.
 
 ## OCD Safeguards
 

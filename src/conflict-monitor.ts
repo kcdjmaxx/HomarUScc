@@ -4,7 +4,7 @@ import type { Logger } from "./types.js";
 import type { SearchResult } from "./memory-index.js";
 
 export interface Conflict {
-  type: "prediction_error" | "behavioral" | "memory_contradiction" | "effort_reward";
+  type: "prediction_error" | "behavioral" | "retrieval_ambiguity" | "effort_reward";
   severity: "low" | "medium" | "high" | "critical";
   domain: string;
   emotionalWeight: number;   // 0-1
@@ -134,7 +134,7 @@ export class ConflictMonitor {
           const emotionalWeight = severity === "high" ? 0.6 : severity === "medium" ? 0.4 : 0.2;
           const cognitiveWeight = severity === "high" ? 0.8 : severity === "medium" ? 0.65 : 0.5;
           conflicts.push({
-            type: "memory_contradiction",
+            type: "retrieval_ambiguity",
             severity,
             domain,
             emotionalWeight,
@@ -177,7 +177,7 @@ export class ConflictMonitor {
    * Auto-resolver — when a search returns paths that were previously flagged as
    * a near-equal-score contradiction, and the score gap has now widened past
    * `minScoreDiff`, mark the old conflict resolved with source="auto". Only
-   * resolves `memory_contradiction` rows (the only type whose description
+   * resolves `retrieval_ambiguity` rows (the only type whose description
    * embeds two paths). Returns the number of conflicts resolved.
    *
    * Only handles the case where both paths reappear in the current results —
@@ -191,7 +191,7 @@ export class ConflictMonitor {
   ): number {
     if (!this.db || searchResults.length === 0) return 0;
     const resolvedDomain = domain ?? this.inferDomain(searchResults);
-    const open = this.getOpenConflicts(resolvedDomain).filter(c => c.type === "memory_contradiction");
+    const open = this.getOpenConflicts(resolvedDomain).filter(c => c.type === "retrieval_ambiguity");
     if (open.length === 0) return 0;
 
     const pathScores = new Map<string, number>();
@@ -223,7 +223,13 @@ export class ConflictMonitor {
   }
 
   /**
-   * Classify memory_contradiction severity based on metric signals.
+   * Classify retrieval_ambiguity severity based on metric signals. "retrieval
+   * ambiguity" replaces the earlier misnomer "memory_contradiction" —
+   * what the detector actually catches is two results that score similarly
+   * on the same query without overlapping content, i.e. retrievability
+   * confusion, not claims that logically disagree. Renamed 2026-04-19
+   * (BUG-20260419-2). Existing conflict_log rows migrated via one-shot
+   * UPDATE in the same commit.
    * Added 2026-04-19 — previously severity was hardcoded "low" which made the
    * decay pipeline and fast-loop alert gating useless. These thresholds are
    * metric-only (score + overlap + domain); keyword-match promotion to

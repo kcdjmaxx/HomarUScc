@@ -60,7 +60,7 @@ A computational model of the anterior cingulate cortex — a conflict/error moni
 ```sql
 CREATE TABLE IF NOT EXISTS conflict_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,          -- 'prediction_error', 'behavioral', 'memory_contradiction', 'effort_reward'
+  type TEXT NOT NULL,          -- 'prediction_error', 'behavioral', 'retrieval_ambiguity', 'effort_reward'
   severity TEXT NOT NULL,       -- 'low', 'medium', 'high', 'critical'
   domain TEXT,                  -- 'user-intent', 'technical', 'conversation-flow', etc.
   emotional_weight REAL DEFAULT 0,
@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_conflict_resolved ON conflict_log(resolved_at);
 
 ```typescript
 interface Conflict {
-  type: 'prediction_error' | 'behavioral' | 'memory_contradiction' | 'effort_reward';
+  type: 'prediction_error' | 'behavioral' | 'retrieval_ambiguity' | 'effort_reward';
   severity: 'low' | 'medium' | 'high' | 'critical';
   domain: string;
   emotionalWeight: number;   // 0-1
@@ -154,8 +154,11 @@ class ConflictMonitor {
 
 These all post-date the original brief and are live in main.
 
+### Rename `memory_contradiction` → `retrieval_ambiguity` (2026-04-19, BUG-20260419-2)
+The original name suggested the detector was catching logical contradictions between stored claims. In practice, the detector flags near-equal scores with low content overlap — that's retrievability ambiguity, not a claim conflict. All occurrences renamed in code, specs, and CRC; 44 existing `conflict_log` rows migrated via one-shot UPDATE.
+
 ### Severity promotion (commit `5aaf39a`)
-`memory_contradiction` was being logged with hardcoded `severity="low"`, which made the decay pipeline and alert gating useless. `classifyContradictionSeverity(scoreDiff, overlap, domain)` now promotes to `medium` when ambiguity is tight (`scoreDiff < 0.02` AND `overlap < 0.05`) and further to `high` when the tight-ambiguity case lands in a high-stakes domain (`user-intent`, `identity`). `critical` is reserved for explicit user escalation.
+`retrieval_ambiguity` was being logged with hardcoded `severity="low"`, which made the decay pipeline and alert gating useless. `classifyContradictionSeverity(scoreDiff, overlap, domain)` now promotes to `medium` when ambiguity is tight (`scoreDiff < 0.02` AND `overlap < 0.05`) and further to `high` when the tight-ambiguity case lands in a high-stakes domain (`user-intent`, `identity`). `critical` is reserved for explicit user escalation.
 
 ### `/missed` recall signal (commit `5aaf39a`)
 Telegram-intercepted command that writes to a new `missed_conflict_log` table. Captures real conflicts the detector didn't catch — the recall-side counterpart to the precision metrics already tracked in `generateMonthlyReport()`. Domain is inferred from description keywords. Surfaces in the weekly conflict reconsolidation.
@@ -168,7 +171,7 @@ Telegram-intercepted command that writes to a new `missed_conflict_log` table. C
 Dispatched through a pluggable `fastLoopNotifier` callback. `homaruscc.ts` wires this to ChannelManager.send → Telegram, target = first `channels.telegram.allowedChatIds`. Rate-limited per `(domain, gate)` at 1 hour to prevent spam. Config: `acc.alerts.{enabled, severityThreshold, burstThreshold, burstWindowMs, rateLimitMs, chatId, channel}`. Unit harness: 12/12.
 
 ### Resolver mechanism — fast path (commit `6b47fe7`, closes BUG-20260419-4 part A)
-`ConflictMonitor.checkForAutoResolutions(results, domain?, minScoreDiff=0.15)` is called at the top of every `memory_search`. Parses `"pathA" vs "pathB"` out of each open `memory_contradiction` in the current domain, and if both paths reappear in the current top-5 with a score gap > `minScoreDiff`, resolves with `source="auto"` and resolution text naming winner/loser/diff. Unilateral presence is *not* resolved (that's the decay path's job — absence from one query's top-K doesn't prove global loss). Unit harness: 11/11.
+`ConflictMonitor.checkForAutoResolutions(results, domain?, minScoreDiff=0.15)` is called at the top of every `memory_search`. Parses `"pathA" vs "pathB"` out of each open `retrieval_ambiguity` in the current domain, and if both paths reappear in the current top-5 with a score gap > `minScoreDiff`, resolves with `source="auto"` and resolution text naming winner/loser/diff. Unilateral presence is *not* resolved (that's the decay path's job — absence from one query's top-K doesn't prove global loss). Unit harness: 11/11.
 
 ### Resolver mechanism — user path (commit `8907255` + glue in `d10352f`, closes BUG-20260419-4 part B)
 `/resolve <id> <note>` Telegram command routes to `ConflictMonitor.resolveById`, which validates existence + not-already-resolved and applies `source="user"`. With no args, the command lists up to 10 open conflicts for easy reference. Unit harness: 13/13.
