@@ -33,6 +33,18 @@ interface Chunk {
 // R82-R89: Temporal decay on search results
 // R115-R117, R123: Dream-aware scoring
 const DEFAULT_EVERGREEN_PATTERNS = ["MEMORY.md", "SOUL.md", "USER.md"];
+
+function cosine(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
 const DEFAULT_DREAM_PATTERNS = ["dreams/", "local/dreams/"];
 const MS_PER_DAY = 86_400_000;
 
@@ -57,7 +69,16 @@ export class MemoryIndex {
   // boost applied before MMR re-ranking. Lets high-value domains (identity,
   // user preferences, CRM) surface even when cold (few retrieval log hits).
   // Supplements the use-dependent retrievalBoost rather than replacing it.
-  private domainBoosts: Array<{ pattern: string; boost: number }> = [];
+  //
+  // Each entry can optionally include a `semantics` string describing what
+  // kinds of queries should trigger the boost (e.g. "identity personality
+  // values who am I"). At search time, the query's embedding is compared
+  // against each semantics-embedding and the boost is applied only when
+  // cosine similarity exceeds `domainBoostMinCosine`. Entries without
+  // semantics always apply (legacy behavior).
+  private domainBoosts: Array<{ pattern: string; boost: number; semantics?: string }> = [];
+  private domainBoostEmbeddings: Map<string, number[]> = new Map();
+  private domainBoostMinCosine = 0.35;
   // Parent-context retrieval: after MMR rerank, expand top-K results by
   // fetching ±N neighbor chunks from the same file and concatenating. Helps
   // queries where the expected answer lives at a chunk boundary or where
@@ -84,7 +105,8 @@ export class MemoryIndex {
     mmrLambda?: number;
     retrievalBoost?: number;
     retrievalBoostCap?: number;
-    domainBoosts?: Array<{ pattern: string; boost: number }>;
+    domainBoosts?: Array<{ pattern: string; boost: number; semantics?: string }>;
+    domainBoostMinCosine?: number;
     parentContextN?: number;
     parentContextTopK?: number;
   }) {
@@ -107,15 +129,28 @@ export class MemoryIndex {
     this.parentContextTopK = options?.parentContextTopK ?? 3;
     this.domainBoosts = options?.domainBoosts ?? [
       // Uniform 3.0 chosen by autoresearch tuning 2026-04-19 (21 experiments
-      // against a 112-case harness). Lowering /user below 3.0 was actively
-      // harmful; per-domain variation didn't beat uniform at this scope.
-      // Pair with retrievalBoost=0.8, retrievalBoostCap=2.5 for the tuned
-      // F1=0.7589 baseline. autoresearch-memory/results.md has the full log.
-      { pattern: "/identity/", boost: 3.0 },
-      { pattern: "/memory/MEMORY.md", boost: 3.0 },
-      { pattern: "/user/", boost: 3.0 },
-      { pattern: "/crm/", boost: 3.0 },
+      // against a 112-case harness). Pair with retrievalBoost=0.8,
+      // retrievalBoostCap=2.5 for the tuned F1=0.7589 baseline.
+      // autoresearch-memory/results.md has the full log.
+      //
+      // `semantics` descriptors added 2026-04-19 for embedding-similarity
+      // gating — the boost only fires when the query's embedding is close
+      // enough to the descriptor (cosine > domainBoostMinCosine). Stops
+      // user-preference files from crowding technical queries.
+      { pattern: "/identity/", boost: 3.0, semantics: "identity personality values soul self who am I character" },
+      { pattern: "/memory/MEMORY.md", boost: 3.0, semantics: "facts conventions known bugs project memory reference" },
+      { pattern: "/user/", boost: 3.0, semantics: "user preferences patterns corrections context decisions" },
+      { pattern: "/crm/", boost: 3.0, semantics: "person contact relationship connection friend family colleague" },
     ];
+    // 0 = gating disabled (all rules pass), legacy behavior. Threshold sweep
+    // on 2026-04-19 against the 112-case harness showed 0.35-0.50 DROPS F1
+    // to 0.80-0.81 vs 0.82 baseline — the average case benefits from the
+    // boosts firing more than being gated. The feature is useful for
+    // specific technical queries (e.g. "openrouter in Hal config") where
+    // user-preference files crowd out the actual answer, but average harness
+    // doesn't reward that specificity. Ship off, document, flip up when
+    // there's a targeted need.
+    this.domainBoostMinCosine = options?.domainBoostMinCosine ?? 0;
   }
 
   setEmbeddingProvider(provider: EmbeddingProvider): void {
@@ -150,7 +185,12 @@ export class MemoryIndex {
     if ((config as Record<string, unknown>).retrievalBoostCap !== undefined) this.retrievalBoostCap = (config as Record<string, unknown>).retrievalBoostCap as number;
     const db = (config as Record<string, unknown>).domainBoosts;
     if (Array.isArray(db)) {
-      this.domainBoosts = db as Array<{ pattern: string; boost: number }>;
+      this.domainBoosts = db as Array<{ pattern: string; boost: number; semantics?: string }>;
+      // Drop cached embeddings — new rules need fresh descriptors
+      this.domainBoostEmbeddings.clear();
+    }
+    if ((config as Record<string, unknown>).domainBoostMinCosine !== undefined) {
+      this.domainBoostMinCosine = (config as Record<string, unknown>).domainBoostMinCosine as number;
     }
     if ((config as Record<string, unknown>).parentContextN !== undefined) {
       this.parentContextN = (config as Record<string, unknown>).parentContextN as number;
@@ -363,16 +403,18 @@ export class MemoryIndex {
       // FTS query may fail on certain inputs
     }
 
+    let queryEmb: number[] | null = null;
     if (this.embeddingProvider) {
       try {
-        const queryEmb = await this.embeddingProvider.embed(query);
+        const emb = await this.embeddingProvider.embed(query);
+        queryEmb = emb;
         const vecResults = db.prepare(`
           SELECT chunk_id, distance
           FROM chunks_vec
           WHERE embedding MATCH ?
           ORDER BY distance
           LIMIT ?
-        `).all(new Uint8Array(new Float32Array(queryEmb).buffer), limit * 2) as Array<{
+        `).all(new Uint8Array(new Float32Array(emb).buffer), limit * 2) as Array<{
           chunk_id: number; distance: number;
         }>;
 
@@ -414,18 +456,23 @@ export class MemoryIndex {
       }
     }
 
-    // Per-domain structural boost: identity/user/crm files get a multiplicative
-    // boost regardless of retrieval history. Compensates for cold-start on
-    // high-value but infrequently-hit files (e.g. soul.md, user.md).
+    // Per-domain structural boost with embedding-similarity gating. Each
+    // boost rule can include a `semantics` descriptor; the boost fires only
+    // when cosine(queryEmb, semanticsEmb) > domainBoostMinCosine. Entries
+    // without semantics always fire (legacy). Stops user/identity boosts
+    // from crowding technical queries where they shouldn't apply.
     if (this.domainBoosts.length > 0 && results.size > 0) {
-      for (const result of results.values()) {
-        let boost = 1;
-        for (const rule of this.domainBoosts) {
-          if (result.path.includes(rule.pattern) && rule.boost > boost) {
-            boost = rule.boost;
+      const activeBoosts = await this.resolveActiveBoosts(queryEmb);
+      if (activeBoosts.length > 0) {
+        for (const result of results.values()) {
+          let boost = 1;
+          for (const rule of activeBoosts) {
+            if (result.path.includes(rule.pattern) && rule.boost > boost) {
+              boost = rule.boost;
+            }
           }
+          if (boost > 1) result.score *= boost;
         }
-        if (boost > 1) result.score *= boost;
       }
     }
 
@@ -466,6 +513,54 @@ export class MemoryIndex {
    *
    * No-ops when parentContextN is 0 (default off for fresh clones).
    */
+  /**
+   * Filter the domain-boost list by embedding-similarity gating. Rules with
+   * a `semantics` descriptor are embedded lazily (once, cached) and compared
+   * against the query embedding; only rules whose cosine similarity exceeds
+   * `domainBoostMinCosine` pass through. Rules without semantics always
+   * pass. If the query embedding is unavailable, all rules pass (legacy
+   * unconditional behavior).
+   *
+   * Stops user/identity boosts from crowding technical queries. Added
+   * 2026-04-19 after diagnosing that uniform 3.0 domain boost muscled
+   * `user/preferences/*` above the actual answer for queries about
+   * `openrouter`, `TouchDesigner emitter`, etc.
+   */
+  private async resolveActiveBoosts(
+    queryEmb: number[] | null,
+  ): Promise<Array<{ pattern: string; boost: number; semantics?: string }>> {
+    if (!queryEmb || !this.embeddingProvider) return [...this.domainBoosts];
+    const active: Array<{ pattern: string; boost: number; semantics?: string }> = [];
+    for (const rule of this.domainBoosts) {
+      if (!rule.semantics) {
+        active.push(rule);
+        continue;
+      }
+      let ruleEmb = this.domainBoostEmbeddings.get(rule.semantics);
+      if (!ruleEmb) {
+        try {
+          ruleEmb = await this.embeddingProvider.embed(rule.semantics);
+          this.domainBoostEmbeddings.set(rule.semantics, ruleEmb);
+        } catch (err) {
+          this.logger.debug("Domain boost semantics embed failed", { rule: rule.pattern, error: String(err) });
+          active.push(rule); // fail open
+          continue;
+        }
+      }
+      const sim = cosine(queryEmb, ruleEmb);
+      if (sim >= this.domainBoostMinCosine) {
+        active.push(rule);
+      } else {
+        this.logger.debug("Domain boost gated out", {
+          rule: rule.pattern,
+          cosine: sim.toFixed(3),
+          threshold: this.domainBoostMinCosine,
+        });
+      }
+    }
+    return active;
+  }
+
   private expandWithParentContext(
     ranked: SearchResult[],
     db: import("better-sqlite3").Database,
