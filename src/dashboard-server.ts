@@ -284,6 +284,20 @@ export class DashboardServer {
       res.json(this.loop.getMemoryIndex().getStats());
     });
 
+    // Live config reload for search params — used by autoresearch and eval
+    // harnesses to push a new memory.search block without restarting the
+    // backend. Accepts the same shape as config.memory.search.
+    this.app.post("/api/memory/reload-search-config", express.json(), (req, res) => {
+      try {
+        const config = req.body as Record<string, unknown>;
+        this.loop.getMemoryIndex().setSearchConfig(config);
+        this.logger.info("Memory search config reloaded", { keys: Object.keys(config) });
+        res.json({ ok: true, applied: Object.keys(config) });
+      } catch (err) {
+        res.status(400).json({ error: String(err) });
+      }
+    });
+
     // ACC Conflict Monitor health endpoint — exposes conflict_log aggregates +
     // the 10 most recent conflicts for dashboard observability.
     this.app.get("/api/conflict-health", (_req, res) => {

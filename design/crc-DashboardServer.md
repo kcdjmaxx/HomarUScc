@@ -24,6 +24,7 @@
   - /api/wait (with digest vs full identity delivery R151, R152; response includes `currentTime` in Max's timezone to mitigate long-session date drift)
   - /api/conflict-health — ACC Conflict Monitor aggregates + 10 most recent
   - /api/memory-health — retrieval utilization, never-retrieved files, top-K
+  - /api/memory/reload-search-config — POST accepts a `memory.search` shape and calls MemoryIndex.setSearchConfig; used by autoresearch / eval harnesses to swap weights without a restart
   - /api/config/skills (R408)
   - /api/checkpoint (R126, R127, R130)
   - /api/agents and /api/agents/:id/complete (R137-R140, R154-R155)
