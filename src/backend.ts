@@ -69,9 +69,44 @@ async function main(): Promise<void> {
       sendTelegram: async (chatId, text) => {
         await telegramAdapter.send(chatId, { text });
       },
+      logMissedConflict: (domain, description) =>
+        loop.getConflictMonitor().logMissedConflict(domain, description),
+      resolveConflict: (id, resolution) => {
+        const out = loop.getConflictMonitor().resolveById(id, resolution, "user");
+        const summary = out.conflict
+          ? `[${out.conflict.severity}/${out.conflict.domain}] ${out.conflict.description.slice(0, 120)}`
+          : undefined;
+        return { ok: out.ok, status: out.status, summary };
+      },
+      listOpenConflicts: (limit = 10) =>
+        loop.getConflictMonitor().getOpenConflicts().slice(0, limit).map(c => ({
+          id: c.id, domain: c.domain, severity: c.severity, description: c.description,
+        })),
     });
     telegramAdapter.setCommandHandler(commandHandler);
     logger.info("Telegram command handler registered");
+  }
+
+  // Optional personal extensions — the file is gitignored, so a fresh clone
+  // simply runs without them. Any module that default-exports or named-exports
+  // `register(loop, logger)` will be loaded here.
+  try {
+    // String-indirection keeps the TypeScript module graph clean on clones
+    // where src/personal-extensions.ts doesn't exist.
+    const extPath = "./personal-extensions.js";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mod: any = await import(extPath);
+    if (typeof mod?.register === "function") {
+      await mod.register(loop, logger);
+      logger.info("Personal extensions registered");
+    }
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("Cannot find module") || msg.includes("ERR_MODULE_NOT_FOUND")) {
+      logger.debug("No personal extensions present (expected on fresh clones)");
+    } else {
+      logger.warn("Personal extensions failed to load", { error: msg });
+    }
   }
 
   logger.info("HomarUScc backend running (no MCP stdio)");

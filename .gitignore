@@ -35,6 +35,13 @@ user/
 src/plugins/
 dashboard/src/plugins/
 
+# Personal extensions (hiring / reporting pipelines — Fric & Frac specific,
+# not part of the public capability story). Loaded via dynamic import in
+# backend.ts; absence is a no-op.
+src/personal-extensions.ts
+src/hiring-pipeline.ts
+src/report-pipeline.ts
+
 # Images (generated avatars, etc.)
 *.PNG
 *.png
