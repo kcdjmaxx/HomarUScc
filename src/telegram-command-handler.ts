@@ -11,6 +11,11 @@ export interface CommandContext {
   projectDir: string;
   sendTelegram: (chatId: string, text: string) => Promise<void>;
   logMissedConflict?: (domain: string, description: string) => number;
+  resolveConflict?: (
+    id: number,
+    resolution: string,
+  ) => { ok: boolean; status: "resolved" | "not_found" | "already_resolved"; summary?: string };
+  listOpenConflicts?: (limit?: number) => Array<{ id: number; domain: string; severity: string; description: string }>;
 }
 
 type CommandHandler = (chatId: string, args: string, ctx: CommandContext) => Promise<string>;
@@ -130,6 +135,33 @@ export class TelegramCommandHandler {
     // Writes to missed_conflict_log via ConflictMonitor for recall-side tracking.
     // Usage: /missed <short description of what was missed>
     // Added 2026-04-19 as part of ACC fast-loop refinement.
+    // /resolve <id> <note> — user closes an ACC conflict explicitly.
+    // With no args, lists the top open conflicts with their ids.
+    // Added 2026-04-19 as part of BUG-20260419-4 fix (resolver mechanism).
+    this.register("resolve", async (_chatId, args, ctx) => {
+      const trimmed = args.trim();
+      if (!trimmed) {
+        if (!ctx.listOpenConflicts) return "ConflictMonitor not available on backend.";
+        const open = ctx.listOpenConflicts(10);
+        if (open.length === 0) return "No open ACC conflicts.";
+        const lines = open.map(c => `#${c.id} [${c.severity}/${c.domain}] ${c.description.slice(0, 120)}`);
+        return `Open conflicts:\n${lines.join("\n")}\n\nUsage: /resolve <id> <one-line note>`;
+      }
+      const m = trimmed.match(/^(\d+)(?:\s+(.*))?$/);
+      if (!m) return "Usage: /resolve <id> <note> — or /resolve alone to list open conflicts.";
+      const id = parseInt(m[1], 10);
+      const note = (m[2] ?? "").trim();
+      if (!note) return `Usage: /resolve ${id} <note> — a note is required so future reconsolidation can interpret the resolution.`;
+      if (!ctx.resolveConflict) return "ConflictMonitor not available on backend.";
+      const out = ctx.resolveConflict(id, note);
+      switch (out.status) {
+        case "resolved": return `Resolved #${id}. ${out.summary ?? ""}`.trim();
+        case "not_found": return `No conflict #${id} in conflict_log.`;
+        case "already_resolved": return `#${id} was already resolved. ${out.summary ?? ""}`.trim();
+      }
+      return "Unknown result.";
+    });
+
     this.register("missed", async (_chatId, args, ctx) => {
       const trimmed = args.trim();
       if (!trimmed) {

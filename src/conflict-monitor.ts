@@ -343,6 +343,27 @@ export class ConflictMonitor {
     });
   }
 
+  /**
+   * User-driven resolution entry point. Validates the row exists and isn't
+   * already resolved before applying. Returns a small result object the
+   * caller (Telegram /resolve, dashboard, etc.) can turn into a message.
+   */
+  resolveById(
+    id: number,
+    resolution: string,
+    source: ConflictResolution["source"] = "user",
+  ): { ok: boolean; status: "resolved" | "not_found" | "already_resolved"; conflict?: StoredConflict } {
+    if (!this.db) return { ok: false, status: "not_found" };
+    const row = this.db.prepare("SELECT * FROM conflict_log WHERE id = ?").get(id) as ConflictRow | undefined;
+    if (!row) return { ok: false, status: "not_found" };
+    if (row.resolved_at !== null) {
+      return { ok: false, status: "already_resolved", conflict: this.rowToConflict(row) };
+    }
+    this.resolveConflict({ conflictId: id, resolution, source });
+    const updated = this.db.prepare("SELECT * FROM conflict_log WHERE id = ?").get(id) as ConflictRow;
+    return { ok: true, status: "resolved", conflict: this.rowToConflict(updated) };
+  }
+
   getOpenConflicts(domain?: string): StoredConflict[] {
     if (!this.db) return [];
 
