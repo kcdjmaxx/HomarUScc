@@ -58,6 +58,12 @@ export class MemoryIndex {
   // user preferences, CRM) surface even when cold (few retrieval log hits).
   // Supplements the use-dependent retrievalBoost rather than replacing it.
   private domainBoosts: Array<{ pattern: string; boost: number }> = [];
+  // Parent-context retrieval: after MMR rerank, expand top-K results by
+  // fetching ±N neighbor chunks from the same file and concatenating. Helps
+  // queries where the expected answer lives at a chunk boundary or where
+  // vocabulary differs between query and the winning chunk. Defaults off.
+  private parentContextN = 0;
+  private parentContextTopK = 3;
   private indexedPaths: string[] = [];
   private watcher: FSWatcher | null = null;
   private logger: Logger;
@@ -79,6 +85,8 @@ export class MemoryIndex {
     retrievalBoost?: number;
     retrievalBoostCap?: number;
     domainBoosts?: Array<{ pattern: string; boost: number }>;
+    parentContextN?: number;
+    parentContextTopK?: number;
   }) {
     this.logger = logger;
     this.chunkSize = options?.chunkSize ?? 400;
@@ -95,6 +103,8 @@ export class MemoryIndex {
     this.mmrLambda = options?.mmrLambda ?? 0.7;
     this.retrievalBoost = options?.retrievalBoost ?? 0.8;
     this.retrievalBoostCap = options?.retrievalBoostCap ?? 2.5;
+    this.parentContextN = options?.parentContextN ?? 0;
+    this.parentContextTopK = options?.parentContextTopK ?? 3;
     this.domainBoosts = options?.domainBoosts ?? [
       // Uniform 3.0 chosen by autoresearch tuning 2026-04-19 (21 experiments
       // against a 112-case harness). Lowering /user below 3.0 was actively
@@ -141,6 +151,12 @@ export class MemoryIndex {
     const db = (config as Record<string, unknown>).domainBoosts;
     if (Array.isArray(db)) {
       this.domainBoosts = db as Array<{ pattern: string; boost: number }>;
+    }
+    if ((config as Record<string, unknown>).parentContextN !== undefined) {
+      this.parentContextN = (config as Record<string, unknown>).parentContextN as number;
+    }
+    if ((config as Record<string, unknown>).parentContextTopK !== undefined) {
+      this.parentContextTopK = (config as Record<string, unknown>).parentContextTopK as number;
     }
   }
 
@@ -435,11 +451,58 @@ export class MemoryIndex {
       .sort(([, a], [, b]) => b.score - a.score);
 
     // CRC: crc-MemoryIndex.md | R90, R96
-    if (this.mmrEnabled && candidates.length > 1) {
-      return this.mmrRerank(candidates, limit, db);
-    }
+    const ranked = (this.mmrEnabled && candidates.length > 1)
+      ? this.mmrRerank(candidates, limit, db)
+      : candidates.slice(0, limit).map(([, r]) => r);
 
-    return candidates.slice(0, limit).map(([, r]) => r);
+    return this.expandWithParentContext(ranked, db);
+  }
+
+  /**
+   * Parent-context retrieval. After the ranker produces its top-K, expand the
+   * first `parentContextTopK` hits by fetching ±`parentContextN` neighbor
+   * chunks (same path, chunk_index ±N) and concatenating. Leaves the score
+   * and chunkIndex of the original hit intact — only `content` grows.
+   *
+   * No-ops when parentContextN is 0 (default off for fresh clones).
+   */
+  private expandWithParentContext(
+    ranked: SearchResult[],
+    db: import("better-sqlite3").Database,
+  ): SearchResult[] {
+    if (this.parentContextN <= 0 || ranked.length === 0) return ranked;
+    const topK = Math.min(this.parentContextTopK, ranked.length);
+    const expanded: SearchResult[] = [];
+    for (let i = 0; i < ranked.length; i++) {
+      if (i >= topK) { expanded.push(ranked[i]); continue; }
+      const r = ranked[i];
+      try {
+        const neighbors = db.prepare(
+          `SELECT chunk_index, content FROM chunks
+           WHERE path = ? AND chunk_index >= ? AND chunk_index <= ?
+             AND chunk_index != ?
+           ORDER BY chunk_index`
+        ).all(
+          r.path,
+          r.chunkIndex - this.parentContextN,
+          r.chunkIndex + this.parentContextN,
+          r.chunkIndex,
+        ) as Array<{ chunk_index: number; content: string }>;
+        if (neighbors.length > 0) {
+          // Hit content first so truncated displays (index/summary detail
+          // levels) keep the matching chunk visible. Neighbors append in
+          // chunk order with a double-newline separator that isn't swallowed
+          // by extractSentences' `---` skip rule in mcp-tools.
+          const merged = [r.content, ...neighbors.map(n => n.content)].join("\n\n");
+          expanded.push({ ...r, content: merged });
+          continue;
+        }
+      } catch {
+        // Fall through to return the un-expanded hit
+      }
+      expanded.push(r);
+    }
+    return expanded;
   }
 
   get(path: string): string | undefined {

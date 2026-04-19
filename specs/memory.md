@@ -25,7 +25,13 @@ Two boost layers applied before MMR re-ranking:
 1. **Domain boost** (structural) — `memory.search.domainBoosts` is an array of `{pattern, boost}` entries. For each result, the max-matching substring rule multiplies the combined score. Default: uniform 3.0 for `/identity/`, `/memory/MEMORY.md`, `/user/`, `/crm/`. Rationale: foundational files (soul, user, CRM) are rarely retrieved so use-dependent boosting has nothing to work with; structural boost compensates for cold-start.
 2. **Use-dependent boost** (retrievalBoost) — `1 + log(count+1) * retrievalBoost`, capped at `retrievalBoostCap`. Defaults: boost 0.8, cap 2.5. Rewards files that have been retrieved before. Multiplies on top of domain boost.
 
-Both are configurable via `config.json` `memory.search.*`. Autoresearch-tunable via `autoresearch-memory/eval.cjs` + POST `/api/memory/reload-search-config`. The 2026-04-19 autoresearch run (21 experiments) established the current defaults at F1=0.7589 on a 112-case harness; the flat plateau around that config (11/21 ties) suggests further gains need indexing changes, not knob tuning.
+Both are configurable via `config.json` `memory.search.*`. Autoresearch-tunable via `autoresearch-memory/eval.cjs` + POST `/api/memory/reload-search-config`. The 2026-04-19 autoresearch run (21 experiments) established the pre-parent-context defaults at F1=0.7589 on a 112-case harness; the flat plateau around that config (11/21 ties) confirmed further gains need indexing/presentation changes, not knob tuning.
+
+### Parent-context retrieval
+
+After MMR rerank, the top-K results (default K=3) can be expanded with ±N neighbor chunks (default N=0, off in core) from the same file. The hit chunk stays FIRST so truncation-based display (index/summary detail) doesn't push it off-screen; neighbors append with a double-newline. Config via `memory.search.parentContextN` and `parentContextTopK`. When combined with `detail="summary"` (the new default for `memory_search`), parent-context expansion contributed F1 0.7589 → 0.8214 on the same harness — because the previous default `detail="index"` truncated results to ~120 chars and hid the expanded context from both the eval and Claude.
+
+The `memory_search` MCP tool default detail level is now `summary` (300 chars, 2-3 sentences) rather than `index` (120 chars, first sentence). This matters both for retrieval eval (substring checks see more content) and for Claude's downstream reasoning (more context per hit, fewer `memory_get` follow-ups).
 
 ## Embeddings
 

@@ -209,18 +209,18 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
   // --- memory_search ---
   tools.push({
     name: "memory_search",
-    description: "Search the memory index using hybrid vector + FTS search. Returns compact results by default — use detail='full' for content or memory_get to fetch specific files.",
+    description: "Search the memory index using hybrid vector + FTS search. Returns 2-3 sentences per result by default — use detail='full' for more content, 'index' for a single sentence, or memory_get to fetch specific files.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
         limit: { type: "number", description: "Max results (default 10)" },
-        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (default, first sentence), 'summary' (2-3 sentences), 'full' (500 chars)" },
+        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (first sentence, 120 chars), 'summary' (default, 2-3 sentences, 300 chars), 'full' (500 chars)" },
       },
       required: ["query"],
     },
     async handler(params) {
-      const { query, limit = 10, detail = "index" } = params as { query: string; limit?: number; detail?: DetailLevel };
+      const { query, limit = 10, detail = "summary" } = params as { query: string; limit?: number; detail?: DetailLevel };
 
       // Unified search: fan out to memory, vault, and all docs domains in parallel
       const searches: Promise<Array<{ path: string; content: string; score: number; source?: string }>>[] = [];
@@ -1107,7 +1107,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       properties: {
         query: { type: "string", description: "Search query" },
         limit: { type: "number", description: "Max results (default 10)" },
-        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (default, first sentence), 'summary' (2-3 sentences), 'full' (500 chars)" },
+        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level: 'index' (first sentence, 120 chars), 'summary' (default, 2-3 sentences, 300 chars), 'full' (500 chars)" },
       },
       required: ["query"],
     },
@@ -1116,7 +1116,7 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       if (!vaultIndex) {
         return { content: [{ type: "text", text: "Vault index not configured. Add memory.vault section to config." }] };
       }
-      const { query, limit = 10, detail = "index" } = params as { query: string; limit?: number; detail?: DetailLevel };
+      const { query, limit = 10, detail = "summary" } = params as { query: string; limit?: number; detail?: DetailLevel };
       try {
         const results = await vaultIndex.search(query, { limit });
         if (results.length === 0) {
