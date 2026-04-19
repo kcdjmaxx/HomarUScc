@@ -33,6 +33,19 @@ After MMR rerank, the top-K results (default K=3) can be expanded with ±N neigh
 
 The `memory_search` MCP tool default detail level is now `summary` (300 chars, 2-3 sentences) rather than `index` (120 chars, first sentence). This matters both for retrieval eval (substring checks see more content) and for Claude's downstream reasoning (more context per hit, fewer `memory_get` follow-ups).
 
+### Query expansion (caller-side)
+
+Query rewriting is reasoning, not mechanical work. It lives in the caller (Claude Code), not the backend — matching the "apps talk to HomarUScc directly; Claude only wakes for reasoning" convention. The backend does not make outbound LLM calls from the search hot path.
+
+When an initial `memory_search` underperforms — top result has a weak score, or doesn't contain the expected content — the caller should rephrase the query 2-3 ways and call `memory_search_multi` with all variants. Useful rewriting moves:
+
+- Drop question-word prefixes: `"how to upload files via FTP"` → `"upload files FTP"`
+- Split compound queries: `"Hal EC2 OpenClaw agent"` → `["Hal EC2", "OpenClaw agent", "Hal"]`
+- Vary vocabulary: `"TouchDesigner particle collision"` → `"TouchDesigner emitter physics"`
+- Reorder entity tokens: `"Roeland Park house Birch Street"` → `"Birch Street house Roeland Park"`
+
+`memory_search_multi` runs each variant through the same scoring pipeline, dedups by chunk, keeps max score per chunk, and returns the top-K merged. One MCP call, one network round-trip.
+
 ## Embeddings
 
 - Pluggable embedding provider using OpenAI-compatible API (works with Ollama, OpenAI, etc.)

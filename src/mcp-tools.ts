@@ -291,6 +291,62 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
   });
 
+  // --- memory_search_multi ---
+  // Caller-driven query expansion. The caller (Claude Code) generates 2-3
+  // phrasings of its search — different vocabulary, reordered terms, split
+  // compound queries — and passes them all. The backend runs each through
+  // the same scoring pipeline, merges dedup'd by chunk_id keeping the max
+  // score, and returns the combined top-K.
+  //
+  // Why this lives in the caller, not the backend: query rewriting is
+  // reasoning, not mechanical work. Claude Code already has the context and
+  // vocabulary to produce good variants. Pushing it into the backend would
+  // add an Anthropic API dependency on every search — a hot path. See
+  // specs/memory.md "Query expansion" for the convention.
+  tools.push({
+    name: "memory_search_multi",
+    description: "Run multiple query variants through memory search in one call. Use when an initial memory_search underperforms (top result has weak score, or doesn't contain the expected fragment) — rephrase the query 2-3 ways (vary vocabulary, split compound queries, drop question-word prefixes) and pass them together. Results are deduplicated by chunk and sorted by max score. Cheaper than several separate memory_search calls.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        queries: { type: "array", items: { type: "string" }, description: "Array of 2-5 query phrasings (more is wasted work)" },
+        limit: { type: "number", description: "Max merged results (default 10)" },
+        detail: { type: "string", enum: ["index", "summary", "full"], description: "Result detail level (default 'summary')" },
+      },
+      required: ["queries"],
+    },
+    async handler(params) {
+      const { queries, limit = 10, detail = "summary" } = params as { queries: string[]; limit?: number; detail?: DetailLevel };
+      if (!Array.isArray(queries) || queries.length === 0) {
+        return { content: [{ type: "text", text: "memory_search_multi: `queries` must be a non-empty array" }] };
+      }
+      const capped = queries.slice(0, 5);
+      const all = await Promise.all(
+        capped.map(q =>
+          loop.getMemoryIndex().search(q, { limit })
+            .then(r => r.map(x => ({ ...x, source: "memory", originQuery: q })))
+            .catch(() => [])
+        )
+      );
+      const bestByChunk = new Map<string, { path: string; content: string; score: number; source: string }>();
+      for (const hits of all) {
+        for (const hit of hits) {
+          const key = `${hit.path}#${(hit as { chunkIndex?: number }).chunkIndex ?? 0}`;
+          const prior = bestByChunk.get(key);
+          if (!prior || hit.score > prior.score) bestByChunk.set(key, hit);
+        }
+      }
+      const merged = [...bestByChunk.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+      if (merged.length === 0) {
+        return { content: [{ type: "text", text: "No results found across any query variant" }] };
+      }
+      loop.getMemoryIndex().logRetrievals(capped.join(" | "), merged.map(r => ({ path: r.path, score: r.score })));
+      const header = `Merged from ${capped.length} query variants (${merged.length} unique hits):\n\n`;
+      const formatted = merged.map((r, i) => formatResult(r, i, detail)).join("\n\n---\n\n");
+      return { content: [{ type: "text", text: header + formatted }] };
+    },
+  });
+
   // --- memory_get ---
   tools.push({
     name: "memory_get",
