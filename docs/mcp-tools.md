@@ -19,7 +19,7 @@ Send a message to a Telegram chat.
 | `chatId` | string | yes | Telegram chat ID |
 | `text` | string | yes | Message text (supports Markdown) |
 
-**Returns:** Confirmation string.
+**Returns:** Confirmation string. If the ACC pre-send hook detects a confidence-without-evidence pattern in `text`, the result also includes `[ACC] flagged this outbound text as confidence-without-evidence (logged).` and a `behavioral`/`high` row is written to `conflict_log`. Sending is non-blocking — the message is delivered either way.
 
 ```json
 { "chatId": "YOUR_CHAT_ID", "text": "Hello from HomarUScc!" }
@@ -194,6 +194,27 @@ Send a message to the web dashboard chat.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `text` | string | yes | Message text |
+
+Subject to the same ACC pre-send hook as `telegram_send` — see the note there for behavior.
+
+---
+
+## ACC (Anterior Cingulate Cortex monitor)
+
+### acc_log_missed
+
+Log a missed conflict — a real conflict that the ACC's automatic detectors didn't catch. This is the recall signal that keeps detection heuristics honest. Used when you (or the user) notice a behavioral or technical contradiction the system should have flagged.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domain` | string | yes | Conflict domain (e.g. `user-intent`, `technical`, `conversation-flow`, `identity`) |
+| `description` | string | yes | One-sentence description of the missed conflict, ideally including why the heuristic should have fired |
+
+**Returns:** `Missed conflict logged (id=N, domain=X)`. Row written to `missed_conflict_log` with `source='user'`. Surfaces in the monthly `generateMonthlyReport` precision/recall calculation.
+
+```json
+{ "domain": "technical", "description": "Caul declared OTP not findable after checking only the Inbox folder; OTP was in Notification folder." }
+```
 
 ---
 

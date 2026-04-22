@@ -82,7 +82,8 @@ EMBEDDING_API_KEY=your-api-key-here
       "exclusions": [".obsidian", "node_modules"],
       "dbPath": "~/.homaruscc/vault/index.sqlite",
       "autoReindex": true,
-      "reindexIntervalMs": 3600000
+      "reindexIntervalMs": 3600000,
+      "htmlSubpaths": ["site-mirror", "reports"]
     }
   },
   "identity": {
@@ -202,6 +203,7 @@ Optional Obsidian vault indexer configuration. Only loaded if `vaultPath` is set
 | `dbPath` | string | `"~/.homaruscc/vault/index.sqlite"` | Path for vault index database |
 | `autoReindex` | boolean | `false` | Enable periodic incremental reindexing |
 | `reindexIntervalMs` | number | `3600000` | Reindex interval in ms (default 1 hour) |
+| `htmlSubpaths` | string[] | `[]` | Substrings (matched against full file path) opting in `.html` files for indexing in select subtrees. Default is `.md`-only; use this to include site mirrors or report HTML in vector search without flooding the index with every dashboard or report HTML in the vault. |
 | `unifiedWeights` | object | -- | Weights for unified search across memory + vault |
 
 ### identity

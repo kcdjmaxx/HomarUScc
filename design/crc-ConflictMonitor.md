@@ -6,12 +6,15 @@
 
 ## Responsibility
 
-Computational model of the anterior cingulate cortex. Detects contradictions, prediction errors, and behavioral inconsistencies during memory retrieval, records them in `conflict_log`, and (a) alerts Max through a fast-loop notifier when severity or burst gates fire, and (b) auto-resolves conflicts that later retrieval disambiguates. Long-tail unresolved conflicts decay.
+Computational model of the anterior cingulate cortex. Detects contradictions, prediction errors, and behavioral inconsistencies at two bind-points — (1) **retrieval time** (during `memory_search`, the original entry-point) and (2) **output composition time** (before outbound text on Telegram/dashboard, added 2026-04-21 to close a confidence-without-evidence gap). Records them in `conflict_log`, alerts Max through a fast-loop notifier when severity or burst gates fire, and auto-resolves conflicts that later retrieval disambiguates. Long-tail unresolved conflicts decay.
 
 ## Collaborators
 
 - **MemoryIndex** — provides the SQLite DB; `conflict_log` table lives there
 - **mcp-tools `memory_search`** — calls `checkForAutoResolutions(...)` then `checkConflicts(...)` on every search; logs any detected conflicts
+- **mcp-tools `telegram_send` / `dashboard_send`** — call `checkOutboundAssertion(text)` before send; log a `behavioral`/`high` conflict if a causal/attribution claim has no recent verifying tool call
+- **mcp-tools handler wrap** — `createMcpTools` wraps every non-send handler to call `recordToolCall(name, argSummary)` automatically; the buffer is the evidence input for `checkOutboundAssertion`
+- **mcp-tools `acc_log_missed`** — Claude-side wrapper around `logMissedConflict`
 - **ChannelManager (via homaruscc)** — target of the fast-loop notifier for Telegram alerts
 - **TelegramCommandHandler** — `/missed` writes to `missed_conflict_log`; `/resolve` calls `resolveById`
 - **Dream cycle** — consumes `getUnresolvedForDream()` (top 10 open, severity-then-age ordered)
@@ -23,6 +26,7 @@ Computational model of the anterior cingulate cortex. Detects contradictions, pr
 - `fastLoopNotifier: FastLoopNotifier | null` — optional Telegram-side callback
 - `alertConfig: AlertConfig` — severityThreshold, burstThreshold, burstWindowMs, rateLimitMs, enabled
 - `lastAlertAt: Map<string, number>` — rate-limit key = `"<gate>:<domain>"`
+- `toolCallBuffer: Array<{name, argSummary, ts}>` — ring buffer (max 20) of recent tool calls; consumed by `checkOutboundAssertion` to decide whether the outbound text was preceded by evidence-gathering
 
 ## Interface
 
@@ -55,9 +59,16 @@ interface AlertConfig {
 class ConflictMonitor {
   initialize(db: Database): void;
 
-  // Detection
+  // Detection — retrieval-time
   checkConflicts(results: SearchResult[], context?: EventContext): Conflict[];
   logConflict(conflict: Conflict): number;           // also evaluates fast-loop gates
+
+  // Detection — output-time (added 2026-04-21 to close the
+  // memory-search-only bind-point gap; was missing
+  // confidence-without-evidence claims at outbound composition)
+  recordToolCall(name: string, argSummary: string): void;          // ring buffer, max 20
+  getRecentToolCalls(): ReadonlyArray<{ name, argSummary, ts }>;
+  checkOutboundAssertion(text: string, options?: { domain?: string }): Conflict | null;
 
   // Resolution — three sources
   checkForAutoResolutions(results: SearchResult[], domain?: string, minScoreDiff?: number): number;  // source="auto"
