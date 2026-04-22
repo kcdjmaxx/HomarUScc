@@ -500,6 +500,78 @@ export class ConflictMonitor {
     return Number(result.lastInsertRowid);
   }
 
+  // ---- Output-side pre-send hook (ACC V2) ----
+  // ACC was originally bound only to memory_search retrieval. A 2026-04-21
+  // user-flagged miss showed the architectural gap: a confident causal
+  // assertion was made in an outbound Telegram message without any verifying
+  // tool call. That path had zero ACC coverage. This buffer + detector
+  // closes the gap: record every tool call, then before sending outbound
+  // text, check the text for declarative-cause markers AND the absence of
+  // a verifying call in recent history.
+  private readonly toolCallBuffer: Array<{ name: string; argSummary: string; ts: number }> = [];
+  private readonly TOOL_BUFFER_MAX = 20;
+
+  /** Record a tool call so checkOutboundAssertion can reason about recent evidence-gathering. */
+  recordToolCall(name: string, argSummary: string): void {
+    this.toolCallBuffer.push({ name, argSummary: argSummary.slice(0, 300), ts: Date.now() });
+    while (this.toolCallBuffer.length > this.TOOL_BUFFER_MAX) {
+      this.toolCallBuffer.shift();
+    }
+  }
+
+  getRecentToolCalls(): ReadonlyArray<{ name: string; argSummary: string; ts: number }> {
+    return this.toolCallBuffer;
+  }
+
+  /**
+   * V1 detector for confidence-without-evidence in outbound text.
+   *
+   * Fires when:
+   *   a causal/attribution claim is present AND
+   *   no hedge markers are present in the same text AND
+   *   no verifying tool call appears in the recent tool-call buffer.
+   *
+   * False positives are acceptable; we log, we do not block. The retrieval
+   * loop can tune the heuristic later via user-reported missed conflicts.
+   */
+  checkOutboundAssertion(text: string, options?: { domain?: string }): Conflict | null {
+    if (!text || text.length < 10) return null;
+    const lc = text.toLowerCase();
+
+    const HEDGE = /\b(possibly|maybe|might\b|may\s|could\s|probably|likely|seems|appears|i think|not sure|unclear|let me check|let me verify|need to check|investigat|looking into|going to look|suspect|guess|lean towards|my guess|my hunch|assuming|if i had to)\b/;
+    if (HEDGE.test(lc)) return null;
+
+    // Causal-attribution markers. Kept tight; better to miss than false-positive.
+    const CAUSAL: RegExp[] = [
+      /\b(?:yeah|yep|yes|right|of course)[,:]?\s*(?:that|it|thats|it's|its)\s+(?:is|was|will be)\s+\w/i,
+      /\b(?:thats|it's|its)\s+(?:because|due to|caused by|the reason)\b/i,
+      /\b(?:the\s+reason|the\s+cause|the\s+source)\s+(?:is|was)\b/i,
+      /\b(?:that|it|source)['']?s?\s+(?:is|was)\s+(?:hal|caul|the\s+backend|the\s+gateway|openai|anthropic|gemini|claude|cursor|the\s+llm|the\s+api|the\s+database|the\s+model|aws|gcp|a\s+bug|a\s+memory\s+leak|a\s+race\s+condition)\b/i,
+    ];
+    if (!CAUSAL.some(re => re.test(lc))) return null;
+
+    // Check recent tool-call buffer for evidence-gathering.
+    const VERIFY_TOOL = /^(memory_|zoho_fetch$|telegram_read$|get_events$|get_status$)/i;
+    const VERIFY_BASH = /\b(ssh|curl|grep|ls |ps |cat |tail |head |less |sqlite|find |node\s+-e|log|status|api\/status|api\/events)\b/i;
+    const hasVerify = this.toolCallBuffer.some(tc => {
+      if (VERIFY_TOOL.test(tc.name)) return true;
+      if ((tc.name === "run_tool" || tc.name === "Bash" || tc.name === "bash") && VERIFY_BASH.test(tc.argSummary)) return true;
+      return false;
+    });
+    if (hasVerify) return null;
+
+    const domain = options?.domain ?? "user-intent";
+    const snippet = text.slice(0, 200).replace(/\s+/g, " ");
+    return {
+      type: "behavioral",
+      severity: "high",
+      domain,
+      emotionalWeight: 0.5,
+      cognitiveWeight: 0.7,
+      description: `Confidence-without-evidence on outbound text — causal/attribution claim with no verifying tool call in last ${this.TOOL_BUFFER_MAX} calls. Text: "${snippet}"`,
+    };
+  }
+
   /**
    * Monthly report — includes precision AND recall tracking.
    */

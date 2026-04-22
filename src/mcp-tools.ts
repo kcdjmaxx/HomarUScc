@@ -86,10 +86,23 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
     async handler(params) {
       const { chatId, text } = params as { chatId: string; text: string };
+      // ACC pre-send check — confidence-without-evidence detection.
+      // Non-blocking: we log, we do not refuse to send.
+      let preSendNote = "";
+      try {
+        const cm = loop.getConflictMonitor();
+        const conflict = cm.checkOutboundAssertion(text);
+        if (conflict) {
+          cm.logConflict(conflict);
+          preSendNote = `\n[ACC] flagged this outbound text as confidence-without-evidence (logged).`;
+        }
+      } catch {
+        // ACC check is non-critical — never block a send.
+      }
       try {
         await loop.getChannelManager().send("telegram", chatId, { text });
         loop.getTranscriptLogger()?.logOutbound("telegram", text);
-        return { content: [{ type: "text", text: `Sent to Telegram chat ${chatId}` }] };
+        return { content: [{ type: "text", text: `Sent to Telegram chat ${chatId}${preSendNote}` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
       }
@@ -726,10 +739,49 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
     },
     async handler(params) {
       const { text } = params as { text: string };
+      // ACC pre-send check — confidence-without-evidence detection.
+      let preSendNote = "";
+      try {
+        const cm = loop.getConflictMonitor();
+        const conflict = cm.checkOutboundAssertion(text);
+        if (conflict) {
+          cm.logConflict(conflict);
+          preSendNote = `\n[ACC] flagged this outbound text as confidence-without-evidence (logged).`;
+        }
+      } catch {
+        // non-critical
+      }
       try {
         await loop.getChannelManager().send("dashboard", "chat", { text });
         loop.getTranscriptLogger()?.logOutbound("dashboard", text);
-        return { content: [{ type: "text", text: "Sent to dashboard" }] };
+        return { content: [{ type: "text", text: `Sent to dashboard${preSendNote}` }] };
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
+      }
+    },
+  });
+
+  // --- acc_log_missed ---
+  // Allows Claude-side to log a conflict that the ACC's automatic detectors
+  // failed to catch, without writing directly to SQLite. Source is set to
+  // 'user' — matches the semantics of the ConflictMonitor.logMissedConflict
+  // method called by /api/acc/missed (backend.ts).
+  tools.push({
+    name: "acc_log_missed",
+    description: "Log a missed-conflict to the ACC (Anterior Cingulate Cortex monitor). Use when you (or the user) catches a conflict type that the automatic detectors did not flag. This is the recall signal that keeps ACC honest.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Conflict domain — e.g. user-intent, technical, conversation-flow, identity" },
+        description: { type: "string", description: "One-sentence description of the missed conflict, including why the automatic heuristics should have fired" },
+      },
+      required: ["domain", "description"],
+    },
+    async handler(params) {
+      const { domain, description } = params as { domain: string; description: string };
+      try {
+        const id = loop.getConflictMonitor().logMissedConflict(domain, description);
+        return { content: [{ type: "text", text: `Missed conflict logged (id=${id}, domain=${domain})` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${String(err)}` }] };
       }
@@ -1897,5 +1949,30 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
   // HomarUScc.registerExtraMcpTool). Fresh clones of the public repo have
   // none — this is how gitignored modules like personal-extensions.ts
   // contribute their own MCP tool surface.
-  return [...tools, ...loop.getExtraMcpTools()];
+  const combined = [...tools, ...loop.getExtraMcpTools()];
+
+  // ACC pre-send hook support: every tool call is recorded so the
+  // outbound-text detector can reason about whether verification
+  // happened before an assertion. telegram_send/dashboard_send are
+  // deliberately NOT recorded as "verification" — see VERIFY_TOOL /
+  // VERIFY_BASH regexes in conflict-monitor.ts.
+  const recordingSkip = new Set<string>(["telegram_send", "dashboard_send", "acc_log_missed"]);
+  for (const tool of combined) {
+    const original = tool.handler;
+    tool.handler = async (params: Record<string, unknown>) => {
+      const result = await original(params);
+      if (!recordingSkip.has(tool.name)) {
+        try {
+          const summary = typeof params === "object" && params
+            ? JSON.stringify(params).slice(0, 300)
+            : String(params ?? "");
+          loop.getConflictMonitor().recordToolCall(tool.name, summary);
+        } catch {
+          // non-critical
+        }
+      }
+      return result;
+    };
+  }
+  return combined;
 }

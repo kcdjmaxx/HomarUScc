@@ -310,6 +310,7 @@ export class HomarUScc {
         this.vaultIndex = new VaultIndex(this.logger, {
           vaultPath: vaultConfig.vaultPath,
           exclusions: vaultConfig.exclusions,
+          htmlSubpaths: vaultConfig.htmlSubpaths,
         });
         if (memoryConfig?.embedding) {
           const vaultEmbeddingProvider = createEmbeddingProvider({

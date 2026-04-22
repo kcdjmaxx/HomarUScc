@@ -207,6 +207,9 @@ export interface MemoryConfig {
     dbPath?: string;
     autoReindex?: boolean;
     reindexIntervalMs?: number;
+    // Substrings to opt-in HTML files for indexing in select subtrees
+    // (default: md-only). Used for the F&F site mirror, HalShare reports, etc.
+    htmlSubpaths?: string[];
     unifiedWeights?: {
       memory?: number;
       vaultCollaborative?: number;
