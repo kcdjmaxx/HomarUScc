@@ -297,11 +297,12 @@ export class HomarUScc {
     }
 
     // 3a. Vault index (optional — V34: only if memory.vault config section present)
-    // VaultIndex/UnifiedSearch are in local/vault-indexer/ (gitignored), loaded dynamically
+    // VaultIndex/UnifiedSearch live in src/vault-indexer/, loaded dynamically so
+    // backends without a vault config don't pay the import cost.
     const vaultConfig = memoryConfig?.vault;
     if (vaultConfig?.vaultPath) {
       try {
-        const vaultDistPath = new URL("../local/vault-indexer/dist/", import.meta.url).pathname;
+        const vaultDistPath = new URL("./vault-indexer/", import.meta.url).pathname;
         const { VaultIndex } = await import(`${vaultDistPath}vault-index.js`);
         const { UnifiedSearch } = await import(`${vaultDistPath}unified-search.js`);
 

@@ -19,7 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && ([ -d local/vault-indexer/src ] && tsc -p local/vault-indexer/tsconfig.json || true)",
+    "build": "tsc && tsc -p src/vault-indexer/tsconfig.json",
     "dev": "tsc --watch",
     "start": "node dist/mcp-server.js",
     "start:proxy": "node dist/mcp-proxy.js",
