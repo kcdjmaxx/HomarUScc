@@ -5,8 +5,79 @@ import type { TelegramChannelAdapter } from "./telegram-adapter.js";
 import type { DashboardAdapter } from "./dashboard-adapter.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { ObsidianCLI } from "./obsidian-cli.js";
+
+// Auto-skill detection: when a `local/howto/*` memory is stored, run H2 (vector-recurrence) +
+// H4 (similarity) heuristics and append candidates to ~/.homaruscc/auto-skills.json.
+// H1 (tool-call count) is not measurable server-side and remains a caller-side reflection check.
+async function detectAutoSkillCandidate(
+  key: string,
+  content: string,
+  loop: HomarUScc,
+): Promise<void> {
+  if (!key.startsWith("local/howto/")) return;
+  const cfg = loop.getConfig().getAll() as { autoSkill?: { enabled?: boolean; recurrenceThreshold?: number; recurrenceMinScore?: number; similarityThreshold?: number } };
+  const autoSkill = cfg.autoSkill;
+  if (!autoSkill?.enabled) return;
+  // Thresholds tuned 2026-04-23 against live MemoryIndex.search score distribution
+  // (FTS-normalized * ftsWeight + cosine * vectorWeight; typically 0.0-0.6 for related howtos).
+  const recurrenceN = autoSkill.recurrenceThreshold ?? 2;
+  const recurrenceMin = autoSkill.recurrenceMinScore ?? 0.2;
+  const similarityMin = autoSkill.similarityThreshold ?? 0.35;
+
+  try {
+    const memoryIndex = loop.getMemoryIndex();
+    const results = await memoryIndex.search(content, { limit: 10 });
+    const howtoMatches = results.filter(
+      (r) => r.path.includes("local/howto/") && r.path !== key,
+    );
+    const h2Fired = howtoMatches.filter((r) => r.score >= recurrenceMin).length >= recurrenceN;
+    const top = howtoMatches[0];
+    const h4Fired = !!top && top.score >= similarityMin;
+
+    if (!h2Fired && !h4Fired) return;
+
+    const detection = h2Fired && h4Fired ? "H2+H4" : h2Fired ? "H2" : "H4";
+    const skillName = key
+      .replace(/^local\/howto\//, "")
+      .replace(/\.md$/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const candidatesPath = join(homedir(), ".homaruscc", "auto-skills.json");
+    let candidates: Array<Record<string, unknown>> = [];
+    if (existsSync(candidatesPath)) {
+      try {
+        candidates = JSON.parse(readFileSync(candidatesPath, "utf8"));
+      } catch {
+        candidates = [];
+      }
+    } else {
+      mkdirSync(join(homedir(), ".homaruscc"), { recursive: true });
+    }
+
+    if (candidates.some((c) => c.sourceHowto === key && c.status === "pending")) return;
+
+    candidates.push({
+      name: skillName,
+      detectedAt: new Date().toISOString(),
+      detection,
+      sourceHowto: key,
+      matchedHowtos: howtoMatches.slice(0, 5).map((m) => m.path),
+      topSimilarityScore: top?.score ?? null,
+      status: "pending",
+      skillPath: `.claude/skills/${skillName}/SKILL.md`,
+      triggerCount: 0,
+      lastTriggered: null,
+    });
+    writeFileSync(candidatesPath, JSON.stringify(candidates, null, 2));
+    console.error("[auto-skill] Candidate detected", key, detection, top?.score ?? "n/a");
+  } catch (err) {
+    console.error("[auto-skill] detection failed (non-fatal)", err);
+  }
+}
 
 export interface McpToolDef {
   name: string;
@@ -472,6 +543,8 @@ export function createMcpTools(loop: HomarUScc): McpToolDef[] {
       }
 
       await loop.getMemoryIndex().store(content, key);
+      // Auto-skill detection (R536): runs only for local/howto/* writes when autoSkill.enabled
+      await detectAutoSkillCandidate(key, content, loop);
       return { content: [{ type: "text", text: `Stored and indexed: ${key}` }] };
     },
   });

@@ -138,6 +138,30 @@ All dashboard components use `useTheme()` hook to access the current color palet
   - Merges plugin MCP tools into core tool list
   - Frontend plugins auto-discovered via `import.meta.glob` in `dashboard/src/App.tsx`
 
+### Applicant Tracker
+- [x] crc-ApplicantTracker.md → `src/dashboard-server.ts`
+- [x] crc-ApplicantView.md → `dashboard/src/components/ApplicantView.tsx`
+- [x] seq-applicant-approve.md → `src/dashboard-server.ts`, `dashboard/src/components/ApplicantView.tsx`
+
+### Hiring Pipeline
+- [x] crc-HiringPipeline.md → `src/hiring-pipeline.ts`, `src/backend.ts`, `src/dashboard-server.ts`
+- [x] seq-hiring-approval.md → `src/hiring-pipeline.ts`, `src/backend.ts`, `src/dashboard-server.ts`
+
+### Reports Pipeline
+- [x] crc-ReportPipeline.md -> `src/report-pipeline.ts`, `src/backend.ts`, `src/mcp-tools.ts`
+
+### Measure Skill
+- [x] crc-MeasureSkill.md → `.claude/skills/measure/SKILL.md`
+- [x] seq-measure-run.md → `.claude/skills/measure/SKILL.md`
+
+### Auto-Skill Generation
+- [x] crc-AutoSkillDetector.md → `.claude/skills/auto-skill/SKILL.md`
+- [x] crc-AutoSkillGenerator.md → `.claude/skills/auto-skill/SKILL.md`
+- [x] crc-AutoSkillTracker.md → `~/.homaruscc/auto-skills.json`, `~/.homaruscc/auto-skills-log.jsonl`
+- [ ] seq-auto-skill-detect.md → `.claude/skills/auto-skill/SKILL.md`, `.claude/skills/homaruscc/SKILL.md`
+- [x] seq-auto-skill-generate.md → `.claude/skills/auto-skill/SKILL.md`
+- [x] seq-auto-skill-explicit.md → `.claude/skills/auto-skill/SKILL.md`
+
 ### Record Collection (plugin, not in repo)
 Extracted to `src/plugins/record-collection/` (gitignored). Design artifacts at `~/.homaruscc/apps/record-collection/design/`.
 
