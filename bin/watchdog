@@ -1,0 +1,58 @@
+#!/bin/bash
+# bin/watchdog — keep the homaruscc tmux session alive.
+# Runs once, exits. Triggered by launchd every 60 seconds (StartInterval).
+# Detects: tmux session "homaruscc" is gone, or exists but has no claude process.
+# Action: invokes bin/restart-claude with a 5-minute backoff to avoid restart-storms.
+
+set -uo pipefail
+
+SESSION_NAME="homaruscc"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RESTART_SCRIPT="$SCRIPT_DIR/restart-claude"
+BACKOFF_FILE="$HOME/.homaruscc/watchdog-last-restart"
+BACKOFF_SECONDS=300  # 5 minutes
+LOG_FILE="$HOME/.homaruscc/watchdog.log"
+
+log() {
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG_FILE"
+}
+
+# Are we in backoff window?
+if [ -f "$BACKOFF_FILE" ]; then
+  last=$(cat "$BACKOFF_FILE" 2>/dev/null || echo 0)
+  now=$(date +%s)
+  age=$((now - last))
+  if [ "$age" -lt "$BACKOFF_SECONDS" ]; then
+    # Still in backoff, but only LOG if the session is actually missing
+    # (otherwise we spam the log every minute when things are healthy)
+    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      log "in backoff (${age}s of ${BACKOFF_SECONDS}s), skipping restart"
+    fi
+    exit 0
+  fi
+fi
+
+any_homaruscc_claude_alive() {
+  # macOS pgrep is BSD: -f matches args for selection but doesn't print them, and
+  # -af is not a valid combination. Use ps with full args output instead, anchored
+  # at the start of the command so we don't false-match shells/wrappers whose
+  # argv contains the word "claude".
+  ps -Ao args= -ww | grep -E "^claude( |$)" | grep -qF "/homaruscc"
+}
+
+if any_homaruscc_claude_alive; then
+  # Some claude is already running /homaruscc — loop is covered.
+  exit 0
+fi
+
+# No claude is running /homaruscc anywhere. Spawn one in the managed tmux session.
+log "no claude running /homaruscc — calling restart-claude"
+
+date +%s > "$BACKOFF_FILE"
+
+if [ -x "$RESTART_SCRIPT" ]; then
+  bash "$RESTART_SCRIPT" >> "$LOG_FILE" 2>&1 || log "restart-claude failed exit=$?"
+else
+  log "ERROR: $RESTART_SCRIPT not executable or missing"
+  exit 1
+fi
