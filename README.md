@@ -324,7 +324,19 @@ Claude Code compresses conversation history when the context window fills up. Wi
 
 **Delivery watermark** — The server tracks the timestamp of the last event delivered to Claude Code. After compaction, the event loop resumes from the watermark instead of replaying old events. This prevents the "bad loop" problem where a post-compaction agent re-handles messages it already responded to.
 
-Both are wired into the `PreCompact` Claude Code hook that calls `/api/pre-compact`. Add this to your project's `.claude/settings.local.json`:
+**Liveness watchdog** — An out-of-band launchd agent (`com.homaruscc.watchdog`) polls the backend's `/api/queue-status` every 60 seconds and reads `lastWaitPollAt`. If the event loop hasn't polled `/api/wait` for 15 minutes (configurable via `POLL_AGE_THRESHOLD`), the watchdog assumes the Claude Code session is dead — compacted-and-stuck, OOM'd, panicked, or terminated by the harness — and runs `bin/restart-claude` to spawn a fresh tmux session that re-invokes `/homaruscc`. Identity rehydrates from `soul.md` + `state.md` on the new instance's first wake. The bash event loop blocks at the OS level (long-poll, zero tokens during idle), so `lastWaitPollAt` is the authoritative liveness signal — no in-process heartbeat code, no Claude-side cron, no token cost while alive. The watchdog only acts when poll-age exceeds the threshold; healthy idle sessions stay quiet.
+
+Three of HomarUScc's subtler bugs lived here and are worth knowing about: (1) BSD `pgrep -af` doesn't print full args, so the alive-check uses `ps -Ao args= -ww | grep -E ^claude`; (2) macOS TCC blocks launchd from executing scripts inside `~/Library/Mobile Documents/iCloud Drive`, so the watchdog script lives at `~/.homaruscc/bin/watchdog`, not in the project directory; (3) `restart-claude` needs `HOMARUSCC_PROJECT_DIR` propagated through the plist's `EnvironmentVariables` so it can `cd` to the right location after spawn.
+
+Install:
+```bash
+cp bin/watchdog ~/.homaruscc/bin/
+cp bin/com.homaruscc.watchdog.example.plist ~/Library/LaunchAgents/com.homaruscc.watchdog.plist
+# Edit ~/Library/LaunchAgents/com.homaruscc.watchdog.plist to replace YOURUSER paths
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.homaruscc.watchdog.plist
+```
+
+These mechanisms are wired into the `PreCompact` Claude Code hook that calls `/api/pre-compact`. Add this to your project's `.claude/settings.local.json`:
 
 ```json
 {

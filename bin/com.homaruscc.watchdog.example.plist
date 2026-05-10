@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.homaruscc.watchdog.example.plist
+
+  Example launchd agent for the HomarUScc liveness watchdog.
+
+  Replace /Users/YOURUSER/ with your home dir, and HOMARUSCC_PROJECT_DIR with
+  the absolute path to your local clone of HomarUScc. launchd does NOT expand
+  $HOME or ~ in plist paths — they must be literal absolute paths.
+
+  Install:
+    cp bin/watchdog ~/.homaruscc/bin/                      (TCC blocks launchd from
+                                                            executing scripts inside
+                                                            iCloud Drive — keep the
+                                                            script under ~/.homaruscc/)
+    cp bin/com.homaruscc.watchdog.example.plist            (then edit YOURUSER paths)
+       ~/Library/LaunchAgents/com.homaruscc.watchdog.plist
+    launchctl bootstrap gui/$(id -u) \
+      ~/Library/LaunchAgents/com.homaruscc.watchdog.plist
+
+  Verify it's loaded:
+    launchctl list | grep com.homaruscc.watchdog
+
+  Uninstall:
+    launchctl bootout gui/$(id -u)/com.homaruscc.watchdog
+    rm ~/Library/LaunchAgents/com.homaruscc.watchdog.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.homaruscc.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/YOURUSER/.homaruscc/bin/watchdog</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/YOURUSER/.homaruscc/watchdog-launchd.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURUSER/.homaruscc/watchdog-launchd.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOMARUSCC_PROJECT_DIR</key>
+        <string>/Users/YOURUSER/path/to/HomarUScc</string>
+    </dict>
+</dict>
+</plist>
